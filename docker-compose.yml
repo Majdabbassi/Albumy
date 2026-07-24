@@ -6,8 +6,8 @@ services:
     container_name: albumy-postgres
     environment:
       POSTGRES_DB: albumy
-      POSTGRES_USER: albumy
-      POSTGRES_PASSWORD: albumy
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: azerty
     ports:
       - "5432:5432"
     volumes:

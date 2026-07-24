@@ -1,30 +1,16 @@
 <div class="register-container">
   <div class="register-card">
-    <h2>Organizer Registration</h2>
-    
+    <h2>Registration</h2>
+
     <div *ngIf="errorMessage" class="error-message">
       {{ errorMessage }}
     </div>
-    
+
     <div *ngIf="successMessage" class="success-message">
       {{ successMessage }}
     </div>
-    
-    <form *ngIf="inviteValid !== false" (ngSubmit)="onSubmit()">
-      <div class="form-group">
-        <label for="inviteToken">Invite Token</label>
-        <input
-          id="inviteToken"
-          type="text"
-          [(ngModel)]="inviteToken"
-          name="inviteToken"
-          required
-          [disabled]="true"
-        >
-        <small *ngIf="inviteValid === true" class="valid-indicator">✓ Valid invite token</small>
-        <small *ngIf="inviteValid === null" class="loading-indicator">Validating...</small>
-      </div>
-      
+
+    <form (ngSubmit)="onSubmit()">
       <div class="form-group">
         <label for="username">Username</label>
         <input
@@ -36,7 +22,7 @@
           placeholder="Choose a username"
         >
       </div>
-      
+
       <div class="form-group">
         <label for="password">Password</label>
         <input
@@ -48,7 +34,7 @@
           placeholder="Choose a password"
         >
       </div>
-      
+
       <div class="form-group">
         <label for="displayName">Display Name</label>
         <input
@@ -60,7 +46,7 @@
           placeholder="Your display name"
         >
       </div>
-      
+
       <div class="form-group">
         <label for="email">Email (optional)</label>
         <input
@@ -71,16 +57,10 @@
           placeholder="your@email.com"
         >
       </div>
-      
-      <button type="submit" [disabled]="!inviteValid">Register</button>
+
+      <button type="submit">Register</button>
     </form>
-    
-    <div *ngIf="inviteValid === false" class="invalid-invite">
-      <p>This invite link is invalid or has expired.</p>
-      <p>Please contact an administrator for a new invite link.</p>
-      <button (click)="goToLogin()">Go to Login</button>
-    </div>
-    
+
     <div class="login-link">
       Already have an account? <a routerLink="/login">Login here</a>
     </div>

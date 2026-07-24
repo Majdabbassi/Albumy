@@ -23,11 +23,11 @@
       {{ successMessage }}
     </div>
 
-    <div *ngIf="!showUploadSection" class="name-picker-section">
+    <div *ngIf="!showUploadSection && !isLoggedIn" class="name-picker-section">
       <div class="name-picker-card">
         <h2>Join the Event</h2>
         <p>Choose a display name to upload photos. Your name must be unique for this event.</p>
-        
+
         <div class="form-group">
           <label for="uploaderName">Your Display Name</label>
           <input
@@ -59,7 +59,7 @@
       <div class="upload-header">
         <h2>Upload Photos</h2>
         <p class="welcome-text">Welcome, <strong>{{ uploaderName }}</strong>!</p>
-        <button (click)="changeName()" class="btn-change-name">Change Name</button>
+        <button *ngIf="!isLoggedIn" (click)="changeName()" class="btn-change-name">Change Name</button>
       </div>
 
       <div class="upload-card">

@@ -1,8 +1,7 @@
 <div class="dashboard-container">
   <div class="dashboard-header">
-    <h1>Organizer Dashboard</h1>
+    <h1>Dashboard</h1>
     <div class="header-actions">
-      <button (click)="generateInvite()" class="btn-secondary">Generate Invite Link</button>
       <button (click)="logout()" class="btn-logout">Logout</button>
     </div>
   </div>
@@ -13,19 +12,6 @@
 
   <div *ngIf="successMessage" class="success-message">
     {{ successMessage }}
-  </div>
-
-  <div *ngIf="showInviteSection" class="invite-section">
-    <h3>Invite Link Generated</h3>
-    <div class="invite-details">
-      <p><strong>Token:</strong> {{ inviteToken }}</p>
-      <p><strong>Registration URL:</strong></p>
-      <div class="invite-url-box">
-        <input type="text" [value]="inviteUrl" readonly>
-        <button (click)="copyInviteUrl()">Copy</button>
-      </div>
-    </div>
-    <button (click)="showInviteSection = false" class="btn-close">Close</button>
   </div>
 
   <div class="events-section">

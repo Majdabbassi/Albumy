@@ -20,10 +20,6 @@ export class DashboardComponent implements OnInit {
   newEventStartTime = '';
   errorMessage = '';
   successMessage = '';
-  isAdmin = false;
-  inviteToken = '';
-  inviteUrl = '';
-  showInviteSection = false;
 
   constructor(
     private authService: AuthService,
@@ -37,7 +33,7 @@ export class DashboardComponent implements OnInit {
       this.router.navigate(['/login']);
       return;
     }
-    
+
     this.loadEvents();
   }
 
@@ -49,8 +45,8 @@ export class DashboardComponent implements OnInit {
       next: (data) => {
         this.events = data;
       },
-      error: () => {
-        this.errorMessage = 'Failed to load events';
+      error: (err) => {
+        this.errorMessage = 'Failed to load events: ' + (err.error?.message || err.message);
       }
     });
   }
@@ -108,29 +104,5 @@ export class DashboardComponent implements OnInit {
   logout(): void {
     this.authService.removeToken();
     this.router.navigate(['/login']);
-  }
-
-  generateInvite(): void {
-    const token = this.authService.getToken();
-    if (!token) return;
-
-    this.eventService.createInvite(token).subscribe({
-      next: (response) => {
-        this.inviteToken = response.token;
-        this.inviteUrl = response.registrationUrl;
-        this.showInviteSection = true;
-      },
-      error: () => {
-        this.errorMessage = 'Failed to generate invite. Admin access required.';
-      }
-    });
-  }
-
-  copyInviteUrl(): void {
-    navigator.clipboard.writeText(this.inviteUrl);
-    this.successMessage = 'Invite URL copied to clipboard!';
-    setTimeout(() => {
-      this.successMessage = '';
-    }, 2000);
   }
 }

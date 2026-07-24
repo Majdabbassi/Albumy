@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { EventService } from '../../services/event.service';
+import { QRCodeModule } from 'angularx-qrcode';
 
 @Component({
   selector: 'app-event-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, QRCodeModule],
   templateUrl: './event-detail.component.html',
   styleUrls: ['./event-detail.component.css']
 })

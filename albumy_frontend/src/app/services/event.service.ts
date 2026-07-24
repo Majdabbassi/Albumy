@@ -71,10 +71,4 @@ export class EventService {
   getFullAlbum(fullAlbumToken: string): Observable<any> {
     return this.http.get(`${this.apiUrl}/events/full/${fullAlbumToken}`);
   }
-
-  createInvite(token: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/admin/invites`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-  }
 }

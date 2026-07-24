@@ -1,7 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, ActivatedRoute, RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 
 @Component({
@@ -11,61 +11,30 @@ import { AuthService } from '../../services/auth.service';
   templateUrl: './register.component.html',
   styleUrls: ['./register.component.css']
 })
-export class RegisterComponent implements OnInit {
+export class RegisterComponent {
   username = '';
   password = '';
   email = '';
   displayName = '';
-  inviteToken = '';
-  inviteValid: boolean | null = null;
   errorMessage = '';
   successMessage = '';
 
   constructor(
     private authService: AuthService,
-    private router: Router,
-    private route: ActivatedRoute
+    private router: Router
   ) {}
 
-  ngOnInit(): void {
-    this.route.queryParams.subscribe(params => {
-      this.inviteToken = params['invite'] || '';
-      if (this.inviteToken) {
-        this.validateInvite();
-      }
-    });
-  }
-
-  validateInvite(): void {
-    this.authService.validateInvite(this.inviteToken).subscribe({
-      next: (isValid) => {
-        this.inviteValid = isValid;
-        if (!isValid) {
-          this.errorMessage = 'Invalid or expired invite token';
-        }
-      },
-      error: () => {
-        this.inviteValid = false;
-        this.errorMessage = 'Invalid or expired invite token';
-      }
-    });
-  }
-
   onSubmit(): void {
-    if (!this.inviteValid) {
-      this.errorMessage = 'Invalid invite token';
-      return;
-    }
-
     this.errorMessage = '';
     this.successMessage = '';
 
-    this.authService.register(this.username, this.password, this.email, this.displayName, this.inviteToken).subscribe({
-      next: () => {
-        this.successMessage = 'Registration successful! Redirecting to login...';
+    this.authService.register(this.username, this.password, this.email, this.displayName).subscribe({
+      next: (response) => {
+        this.authService.saveToken(response.token);
+        this.successMessage = 'Registration successful! Redirecting to dashboard...';
         setTimeout(() => {
-          this.router.navigate(['/login']);
-        }, 2000);
+          this.router.navigate(['/dashboard']);
+        }, 1000);
       },
       error: (err) => {
         this.errorMessage = err.error?.message || 'Registration failed';

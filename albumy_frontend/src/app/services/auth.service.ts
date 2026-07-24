@@ -14,18 +14,8 @@ export class AuthService {
     return this.http.post(`${this.apiUrl}/auth/login`, { username, password });
   }
 
-  register(username: string, password: string, email: string, displayName: string, inviteToken: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/auth/register`, { username, password, email, displayName, inviteToken });
-  }
-
-  validateInvite(token: string): Observable<boolean> {
-    return this.http.get<boolean>(`${this.apiUrl}/invites/${token}`);
-  }
-
-  createInvite(token: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/admin/invites`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+  register(username: string, password: string, email: string, displayName: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/auth/register`, { username, password, email, displayName });
   }
 
   saveToken(token: string): void {
@@ -42,5 +32,29 @@ export class AuthService {
 
   isLoggedIn(): boolean {
     return !!this.getToken();
+  }
+
+  getUserRole(): string | null {
+    const token = this.getToken();
+    if (!token) return null;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      // Spring Security JWT stores roles in authorities array with ROLE_ prefix
+      const authorities = payload.authorities || [];
+      if (authorities.length > 0) {
+        const role = authorities[0].replace('ROLE_', '');
+        return role;
+      }
+      // Fallback to role field if it exists
+      return payload.role || null;
+    } catch (e) {
+      console.error('Error parsing JWT:', e);
+      return null;
+    }
+  }
+
+  isAdmin(): boolean {
+    return this.getUserRole() === 'ADMIN';
   }
 }

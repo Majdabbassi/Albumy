@@ -40,6 +40,6 @@ public class User {
     private Role role;
 
     public enum Role {
-        ADMIN, ORGANIZER
+        ADMIN, USER, PHOTOGRAPHER
     }
 }

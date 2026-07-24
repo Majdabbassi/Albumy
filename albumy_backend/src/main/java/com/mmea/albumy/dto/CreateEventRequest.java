@@ -1,6 +1,7 @@
 package com.mmea.albumy.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -15,9 +16,9 @@ public class CreateEventRequest {
     @NotBlank
     private String name;
     
-    @NotBlank
+    @NotNull
     private LocalDate date;
     
-    @NotBlank
+    @NotNull
     private LocalTime startTime;
 }

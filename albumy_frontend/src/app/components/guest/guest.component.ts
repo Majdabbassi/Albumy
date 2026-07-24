@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { EventService } from '../../services/event.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-guest',
@@ -25,14 +26,32 @@ export class GuestComponent implements OnInit {
   errorMessage = '';
   successMessage = '';
   loading = true;
+  isLoggedIn = false;
+  currentUser: string = '';
 
   constructor(
     private route: ActivatedRoute,
-    private eventService: EventService
+    private eventService: EventService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
     this.eventCode = this.route.snapshot.paramMap.get('code') || '';
+    this.isLoggedIn = this.authService.isLoggedIn();
+    
+    if (this.isLoggedIn) {
+      // Get user's display name or username
+      const token = this.authService.getToken();
+      if (token) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          this.currentUser = payload.sub || payload.username || '';
+        } catch (e) {
+          console.error('Error parsing JWT:', e);
+        }
+      }
+    }
+
     if (this.eventCode) {
       this.loadEventInfo();
       this.checkStoredName();
@@ -53,6 +72,15 @@ export class GuestComponent implements OnInit {
   }
 
   checkStoredName(): void {
+    // If logged in, use account identity and skip name picker
+    if (this.isLoggedIn) {
+      this.uploaderName = this.currentUser;
+      this.showUploadSection = true;
+      this.loadMyPhotos();
+      return;
+    }
+
+    // Anonymous flow - check localStorage
     const storedName = localStorage.getItem(`guest_name_${this.eventCode}`);
     if (storedName) {
       this.uploaderName = storedName;
@@ -155,6 +183,10 @@ export class GuestComponent implements OnInit {
   }
 
   changeName(): void {
+    if (this.isLoggedIn) {
+      // Logged-in users cannot change their identity
+      return;
+    }
     localStorage.removeItem(`guest_name_${this.eventCode}`);
     this.uploaderName = '';
     this.showUploadSection = false;

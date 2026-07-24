@@ -24,9 +24,8 @@
 
       <div class="qr-section">
         <h3>Guest QR Code</h3>
-        <div class="qr-placeholder">
-          <p>QR Code will be displayed here after installing angularx-qrcode</p>
-          <p class="guest-url-text">{{ guestUrl }}</p>
+        <div class="qr-code">
+          <qrcode [qrdata]="guestUrl" [width]="200" [errorCorrectionLevel]="'M'"></qrcode>
         </div>
         <div class="url-actions">
           <button (click)="copyGuestUrl()" class="btn-secondary">Copy Guest URL</button>
