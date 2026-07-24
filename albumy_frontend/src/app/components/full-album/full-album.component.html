@@ -1,0 +1,40 @@
+<div class="full-album-container">
+  <div *ngIf="loading" class="loading">
+    <p>Loading album...</p>
+  </div>
+
+  <div *ngIf="errorMessage && !event" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="event" class="full-album-content">
+    <div class="album-header">
+      <h1>{{ event.name }}</h1>
+      <p class="album-datetime">
+        <span>{{ event.date }}</span> at <span>{{ event.startTime }}</span>
+      </p>
+      <p class="photo-count">{{ photos.length }} photos</p>
+    </div>
+
+    <div class="photos-section">
+      <div *ngIf="photos.length === 0" class="no-photos">
+        <p>No photos uploaded yet.</p>
+      </div>
+
+      <div class="photos-grid" *ngIf="photos.length > 0">
+        <div class="photo-card" *ngFor="let photo of photos">
+          <div class="photo-image">
+            <img [src]="'http://localhost:8080' + photo.fileUrl" [alt]="photo.fileName">
+          </div>
+          <div class="photo-info">
+            <p class="uploader-name">{{ photo.uploaderName }}</p>
+            <p class="upload-time">{{ photo.uploadedAt | date:'short' }}</p>
+          </div>
+          <div class="photo-actions">
+            <button (click)="downloadPhoto(photo)" class="btn-download">Download</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

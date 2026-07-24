@@ -1,0 +1,91 @@
+<div class="dashboard-container">
+  <div class="dashboard-header">
+    <h1>Organizer Dashboard</h1>
+    <div class="header-actions">
+      <button (click)="generateInvite()" class="btn-secondary">Generate Invite Link</button>
+      <button (click)="logout()" class="btn-logout">Logout</button>
+    </div>
+  </div>
+
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="successMessage" class="success-message">
+    {{ successMessage }}
+  </div>
+
+  <div *ngIf="showInviteSection" class="invite-section">
+    <h3>Invite Link Generated</h3>
+    <div class="invite-details">
+      <p><strong>Token:</strong> {{ inviteToken }}</p>
+      <p><strong>Registration URL:</strong></p>
+      <div class="invite-url-box">
+        <input type="text" [value]="inviteUrl" readonly>
+        <button (click)="copyInviteUrl()">Copy</button>
+      </div>
+    </div>
+    <button (click)="showInviteSection = false" class="btn-close">Close</button>
+  </div>
+
+  <div class="events-section">
+    <div class="section-header">
+      <h2>My Events</h2>
+      <button (click)="toggleCreateForm()" class="btn-primary">
+        {{ showCreateForm ? 'Cancel' : '+ Create Event' }}
+      </button>
+    </div>
+
+    <div *ngIf="showCreateForm" class="create-event-form">
+      <h3>Create New Event</h3>
+      <div class="form-group">
+        <label for="eventName">Event Name</label>
+        <input
+          id="eventName"
+          type="text"
+          [(ngModel)]="newEventName"
+          placeholder="Enter event name"
+        >
+      </div>
+      <div class="form-group">
+        <label for="eventDate">Date</label>
+        <input
+          id="eventDate"
+          type="date"
+          [(ngModel)]="newEventDate"
+        >
+      </div>
+      <div class="form-group">
+        <label for="eventStartTime">Start Time</label>
+        <input
+          id="eventStartTime"
+          type="time"
+          [(ngModel)]="newEventStartTime"
+        >
+      </div>
+      <div class="form-actions">
+        <button (click)="createEvent()" class="btn-primary">Create Event</button>
+        <button (click)="toggleCreateForm()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+
+    <div *ngIf="events.length === 0 && !showCreateForm" class="no-events">
+      <p>No events yet. Create your first event to get started!</p>
+    </div>
+
+    <div class="events-grid" *ngIf="events.length > 0">
+      <div class="event-card" *ngFor="let event of events">
+        <div class="event-info">
+          <h3>{{ event.name }}</h3>
+          <p><strong>Date:</strong> {{ event.date }}</p>
+          <p><strong>Time:</strong> {{ event.startTime }}</p>
+          <p><strong>Event Code:</strong> <span class="code">{{ event.eventCode }}</span></p>
+        </div>
+        <div class="event-actions">
+          <button (click)="viewEvent(event.id)" class="btn-primary">View Event</button>
+          <button (click)="deleteEvent(event.id)" class="btn-delete">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,77 @@
+<div class="event-detail-container">
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="successMessage" class="success-message">
+    {{ successMessage }}
+  </div>
+
+  <div *ngIf="event" class="event-detail-content">
+    <div class="detail-header">
+      <button (click)="goBack()" class="btn-back">← Back to Dashboard</button>
+      <h1>{{ event.name }}</h1>
+    </div>
+
+    <div class="event-info-section">
+      <div class="info-card">
+        <h3>Event Details</h3>
+        <p><strong>Date:</strong> {{ event.date }}</p>
+        <p><strong>Time:</strong> {{ event.startTime }}</p>
+        <p><strong>Event Code:</strong> <span class="code">{{ event.eventCode }}</span></p>
+        <p><strong>Total Photos:</strong> {{ event.photoCount }}</p>
+      </div>
+
+      <div class="qr-section">
+        <h3>Guest QR Code</h3>
+        <div class="qr-placeholder">
+          <p>QR Code will be displayed here after installing angularx-qrcode</p>
+          <p class="guest-url-text">{{ guestUrl }}</p>
+        </div>
+        <div class="url-actions">
+          <button (click)="copyGuestUrl()" class="btn-secondary">Copy Guest URL</button>
+        </div>
+      </div>
+
+      <div class="full-album-section">
+        <h3>Full Album Link</h3>
+        <p class="full-album-url">{{ fullAlbumUrl }}</p>
+        <div class="url-actions">
+          <button (click)="copyFullAlbumUrl()" class="btn-secondary">Copy Full Album URL</button>
+          <a [href]="fullAlbumUrl" target="_blank" class="btn-link">Open Full Album</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="actions-section">
+      <button (click)="downloadAllPhotos()" class="btn-primary" [disabled]="photos.length === 0">
+        Download All Photos (ZIP)
+      </button>
+      <button (click)="deleteEvent()" class="btn-delete">Delete Event</button>
+    </div>
+
+    <div class="photos-section">
+      <h2>Photo Gallery ({{ photos.length }})</h2>
+      
+      <div *ngIf="photos.length === 0" class="no-photos">
+        <p>No photos uploaded yet. Share the guest URL or QR code with guests!</p>
+      </div>
+
+      <div class="photos-grid" *ngIf="photos.length > 0">
+        <div class="photo-card" *ngFor="let photo of photos">
+          <div class="photo-image">
+            <img [src]="'http://localhost:8080' + photo.fileUrl" [alt]="photo.fileName">
+          </div>
+          <div class="photo-info">
+            <p class="uploader-name">{{ photo.uploaderName }}</p>
+            <p class="upload-time">{{ photo.uploadedAt | date:'short' }}</p>
+          </div>
+          <div class="photo-actions">
+            <a [href]="'http://localhost:8080' + photo.fileUrl" target="_blank" class="btn-download">Download</a>
+            <button (click)="deletePhoto(photo.id)" class="btn-delete-small">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
