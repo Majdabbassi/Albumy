@@ -161,6 +161,46 @@
   background: white;
 }
 
+.invite-actions {
+  margin-top: 15px;
+}
+
+.invite-list {
+  margin-top: 20px;
+}
+
+.invite-list h4 {
+  margin: 0 0 10px 0;
+  color: #004085;
+}
+
+.invite-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.invite-status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #ffc107;
+  color: #333;
+}
+
+.invite-status.used {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
 .btn-primary {
   padding: 12px 24px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);

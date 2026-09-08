@@ -11,6 +11,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     List<Event> findByOrganizer(User organizer);
     Optional<Event> findByEventCode(String eventCode);
     Optional<Event> findByFullAlbumToken(String fullAlbumToken);
+    Optional<Event> findByName(String name);
     boolean existsByEventCode(String eventCode);
     boolean existsByFullAlbumToken(String fullAlbumToken);
 }

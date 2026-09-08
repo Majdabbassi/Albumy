@@ -14,8 +14,24 @@ export class AuthService {
     return this.http.post(`${this.apiUrl}/auth/login`, { username, password });
   }
 
-  register(username: string, password: string, email: string, displayName: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/auth/register`, { username, password, email, displayName });
+  register(username: string, password: string, email: string, displayName: string, inviteToken: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/auth/register`, { username, password, email, displayName, inviteToken });
+  }
+
+  validateInvite(token: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/invites/${token}`);
+  }
+
+  createInvite(token: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/admin/invites`, null, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  getInvites(token: string): Observable<any> {
+    return this.http.get(`${this.apiUrl}/admin/invites`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
   }
 
   saveToken(token: string): void {

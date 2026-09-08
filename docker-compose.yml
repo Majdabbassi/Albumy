@@ -1,13 +1,11 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16
     container_name: albumy-postgres
     environment:
-      POSTGRES_DB: albumy
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: azerty
+      POSTGRES_DB: ${POSTGRES_DB:-albumy}
+      POSTGRES_USER: ${POSTGRES_USER:-albumy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-albumy}
     ports:
       - "5432:5432"
     volumes:

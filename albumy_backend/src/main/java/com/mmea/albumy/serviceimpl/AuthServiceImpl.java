@@ -3,10 +3,12 @@ package com.mmea.albumy.serviceimpl;
 import com.mmea.albumy.dto.LoginRequest;
 import com.mmea.albumy.dto.LoginResponse;
 import com.mmea.albumy.dto.RegisterRequest;
+import com.mmea.albumy.exception.ApiException;
 import com.mmea.albumy.model.User;
 import com.mmea.albumy.repository.UserRepository;
 import com.mmea.albumy.security.JwtUtil;
 import com.mmea.albumy.service.AuthService;
+import com.mmea.albumy.service.InviteService;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -21,13 +23,16 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final InviteService inviteService;
 
     public AuthServiceImpl(AuthenticationManager authenticationManager, JwtUtil jwtUtil,
-                           UserRepository userRepository, PasswordEncoder passwordEncoder) {
+                           UserRepository userRepository, PasswordEncoder passwordEncoder,
+                           InviteService inviteService) {
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.inviteService = inviteService;
     }
 
     @Override
@@ -39,7 +44,7 @@ public class AuthServiceImpl implements AuthService {
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
 
         User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> ApiException.notFound("User not found"));
 
         String token = jwtUtil.generateToken(userDetails.getUsername(), user.getRole().name());
 
@@ -49,15 +54,17 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
-            throw new RuntimeException("Username already exists");
+            throw ApiException.conflict("Username already exists");
         }
+
+        inviteService.consume(request.getInviteToken());
 
         User user = new User();
         user.setUsername(request.getUsername());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setEmail(request.getEmail());
         user.setDisplayName(request.getDisplayName());
-        user.setRole(User.Role.USER);
+        user.setRole(User.Role.ORGANIZER);
         userRepository.save(user);
 
         // Auto-login after registration

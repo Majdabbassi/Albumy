@@ -9,9 +9,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "photos", uniqueConstraints = {
-    @UniqueConstraint(columnNames = {"event_id", "uploader_name"})
-})
+@Table(name = "photos")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -25,8 +23,9 @@ public class Photo {
     @JoinColumn(name = "event_id", nullable = false)
     private Event event;
 
-    @Column(name = "uploader_name", nullable = false)
-    private String uploaderName;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "guest_id", nullable = false)
+    private Guest guest;
 
     @Column(nullable = false)
     private String fileName;

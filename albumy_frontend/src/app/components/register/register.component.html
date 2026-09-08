@@ -2,6 +2,18 @@
   <div class="register-card">
     <h2>Registration</h2>
 
+    <div *ngIf="checkingInvite" class="invite-checking">
+      Checking your invite...
+    </div>
+
+    <div *ngIf="!checkingInvite && inviteValid" class="invite-valid">
+      {{ inviteMessage }}
+    </div>
+
+    <div *ngIf="!checkingInvite && !inviteValid" class="invite-invalid">
+      {{ inviteMessage }}
+    </div>
+
     <div *ngIf="errorMessage" class="error-message">
       {{ errorMessage }}
     </div>
@@ -10,7 +22,7 @@
       {{ successMessage }}
     </div>
 
-    <form (ngSubmit)="onSubmit()">
+    <form (ngSubmit)="onSubmit()" *ngIf="!successMessage">
       <div class="form-group">
         <label for="username">Username</label>
         <input
@@ -58,7 +70,7 @@
         >
       </div>
 
-      <button type="submit">Register</button>
+      <button type="submit" [disabled]="!inviteValid || checkingInvite">Register</button>
     </form>
 
     <div class="login-link">

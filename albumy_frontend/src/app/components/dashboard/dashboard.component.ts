@@ -20,6 +20,9 @@ export class DashboardComponent implements OnInit {
   newEventStartTime = '';
   errorMessage = '';
   successMessage = '';
+  isAdmin = false;
+  invites: any[] = [];
+  latestInviteUrl = '';
 
   constructor(
     private authService: AuthService,
@@ -34,7 +37,53 @@ export class DashboardComponent implements OnInit {
       return;
     }
 
+    this.isAdmin = this.authService.isAdmin();
     this.loadEvents();
+
+    if (this.isAdmin) {
+      this.loadInvites();
+    }
+  }
+
+  loadInvites(): void {
+    const token = this.authService.getToken();
+    if (!token) return;
+
+    this.authService.getInvites(token).subscribe({
+      next: (data) => {
+        this.invites = data;
+      },
+      error: () => {
+        this.errorMessage = 'Failed to load invites';
+      }
+    });
+  }
+
+  generateInvite(): void {
+    const token = this.authService.getToken();
+    if (!token) return;
+
+    this.errorMessage = '';
+    this.successMessage = '';
+
+    this.authService.createInvite(token).subscribe({
+      next: (invite) => {
+        this.latestInviteUrl = invite?.registrationUrl || '';
+        this.loadInvites();
+        this.successMessage = 'Invite link generated! Copy it and send it to a future organizer.';
+      },
+      error: () => {
+        this.errorMessage = 'Failed to generate invite';
+      }
+    });
+  }
+
+  copyInviteUrl(url: string): void {
+    navigator.clipboard.writeText(url);
+    this.successMessage = 'Invite URL copied to clipboard!';
+    setTimeout(() => {
+      this.successMessage = '';
+    }, 2000);
   }
 
   loadEvents(): void {

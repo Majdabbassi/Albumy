@@ -9,37 +9,26 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users")
+@Table(name = "invites")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class User {
+public class Invite {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
-    private String username;
-
-    @Column
-    private String email;
+    @Column(unique = true, nullable = false, length = 36)
+    private String token;
 
     @Column(nullable = false)
-    private String passwordHash;
-
-    @Column(nullable = false)
-    private String displayName;
+    private boolean used;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private Role role;
-
-    public enum Role {
-        ADMIN, ORGANIZER
-    }
+    private LocalDateTime expiresAt;
 }

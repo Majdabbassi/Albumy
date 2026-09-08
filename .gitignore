@@ -1,0 +1,30 @@
+# Environment / secrets
+.env
+.env.local
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Java / Maven
+target/
+*.class
+*.log
+.mvn/wrapper/maven-wrapper.jar
+
+# Runtime data
+uploads/
+backend-run.log
+backend-run-err.log

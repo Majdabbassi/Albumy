@@ -19,4 +19,6 @@ public class RegisterRequest {
 
     @NotBlank
     private String displayName;
+
+    private String inviteToken;
 }

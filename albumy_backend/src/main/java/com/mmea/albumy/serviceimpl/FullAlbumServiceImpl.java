@@ -2,12 +2,14 @@ package com.mmea.albumy.serviceimpl;
 
 import com.mmea.albumy.dto.EventDetailResponse;
 import com.mmea.albumy.dto.PhotoResponse;
+import com.mmea.albumy.exception.ApiException;
 import com.mmea.albumy.model.Event;
 import com.mmea.albumy.model.Photo;
 import com.mmea.albumy.repository.EventRepository;
 import com.mmea.albumy.repository.PhotoRepository;
 import com.mmea.albumy.service.FullAlbumService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -24,15 +26,16 @@ public class FullAlbumServiceImpl implements FullAlbumService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public EventDetailResponse getFullAlbum(String fullAlbumToken) {
         Event event = eventRepository.findByFullAlbumToken(fullAlbumToken)
-                .orElseThrow(() -> new RuntimeException("Event not found"));
+                .orElseThrow(() -> ApiException.notFound("Event not found"));
 
         List<Photo> photos = photoRepository.findByEvent(event);
         List<PhotoResponse> photoResponses = photos.stream()
                 .map(photo -> new PhotoResponse(
                         photo.getId(),
-                        photo.getUploaderName(),
+                        photo.getGuest().getName(),
                         photo.getFileName(),
                         "/files/" + photo.getFileName(),
                         photo.getUploadedAt()

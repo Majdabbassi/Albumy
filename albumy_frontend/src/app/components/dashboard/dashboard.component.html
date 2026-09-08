@@ -14,6 +14,38 @@
     {{ successMessage }}
   </div>
 
+  <div *ngIf="isAdmin" class="invite-section">
+    <h3>Admin — Organizer Invites</h3>
+    <p>
+      Registration is invite-only. Generate a single-use link to allow a new organizer to create an account.
+      Each invite expires after 7 days.
+    </p>
+    <div class="invite-actions">
+      <button (click)="generateInvite()" class="btn-primary">+ Generate Invite Link</button>
+    </div>
+
+    <div *ngIf="latestInviteUrl" class="invite-details">
+      <p><strong>New invite link (copy and send):</strong></p>
+      <div class="invite-url-box">
+        <input [value]="latestInviteUrl" readonly>
+        <button (click)="copyInviteUrl(latestInviteUrl)" class="btn-primary">Copy</button>
+      </div>
+    </div>
+
+    <div *ngIf="invites.length > 0" class="invite-list">
+      <h4>Recent invites</h4>
+      <div class="invite-row" *ngFor="let invite of invites">
+        <span class="invite-status" [class.used]="invite.used">
+          {{ invite.used ? 'Used' : 'Pending' }}
+        </span>
+        <span class="code">{{ invite.token }}</span>
+        <span *ngIf="!invite.used">
+          <button (click)="copyInviteUrl(invite.registrationUrl)" class="btn-secondary btn-sm">Copy</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
   <div class="events-section">
     <div class="section-header">
       <h2>My Events</h2>
