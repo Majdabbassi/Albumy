@@ -23,4 +23,5 @@ public class EventDetailResponse {
     private LocalDateTime createdAt;
     private List<PhotoResponse> photos;
     private long photoCount;
+    private String coverUrl;
 }

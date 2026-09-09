@@ -1,76 +1,238 @@
-<div class="event-detail-container">
-  <div *ngIf="errorMessage" class="error-message">
-    {{ errorMessage }}
+<nav class="navbar">
+  <div class="navbar-inner">
+    <button (click)="goBack()" class="btn btn-ghost btn-sm">
+      <app-icon name="arrow-left" [size]="17"></app-icon>
+      Back
+    </button>
+    <span class="brand" [routerLink]="['/dashboard']">
+      <span class="brand-mark">
+        <app-icon name="camera" [size]="18"></app-icon>
+      </span>
+      <span>Albumy</span>
+    </span>
+    <div class="spacer"></div>
+    <span *ngIf="live" class="live-pill">
+      <span class="live-dot"></span>
+      Live
+    </span>
   </div>
+</nav>
 
-  <div *ngIf="successMessage" class="success-message">
-    {{ successMessage }}
+<div class="page" *ngIf="loading">
+  <div class="spinner-wrap" style="min-height: 40vh;">
+    <span class="spinner"></span>
+    <span>Loading event…</span>
   </div>
+</div>
 
-  <div *ngIf="event" class="event-detail-content">
-    <div class="detail-header">
-      <button (click)="goBack()" class="btn-back">← Back to Dashboard</button>
-      <h1>{{ event.name }}</h1>
-    </div>
-
-    <div class="event-info-section">
-      <div class="info-card">
-        <h3>Event Details</h3>
-        <p><strong>Date:</strong> {{ event.date }}</p>
-        <p><strong>Time:</strong> {{ event.startTime }}</p>
-        <p><strong>Event Code:</strong> <span class="code">{{ event.eventCode }}</span></p>
-        <p><strong>Total Photos:</strong> {{ event.photoCount }}</p>
+<div class="page" *ngIf="!loading && errorMessage && !event">
+  <div class="card card-pad error-full">
+    <div class="empty-state">
+      <div class="empty-icon">
+        <app-icon name="alert" [size]="26"></app-icon>
       </div>
-
-      <div class="qr-section">
-        <h3>Guest QR Code</h3>
-        <div class="qr-code">
-          <qrcode [qrdata]="guestUrl" [width]="200" [errorCorrectionLevel]="'M'"></qrcode>
-        </div>
-        <div class="url-actions">
-          <button (click)="copyGuestUrl()" class="btn-secondary">Copy Guest URL</button>
-        </div>
-      </div>
-
-      <div class="full-album-section">
-        <h3>Full Album Link</h3>
-        <p class="full-album-url">{{ fullAlbumUrl }}</p>
-        <div class="url-actions">
-          <button (click)="copyFullAlbumUrl()" class="btn-secondary">Copy Full Album URL</button>
-          <a [href]="fullAlbumUrl" target="_blank" class="btn-link">Open Full Album</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="actions-section">
-      <button (click)="downloadAllPhotos()" class="btn-primary" [disabled]="photos.length === 0">
-        Download All Photos (ZIP)
-      </button>
-      <button (click)="deleteEvent()" class="btn-delete">Delete Event</button>
-    </div>
-
-    <div class="photos-section">
-      <h2>Photo Gallery ({{ photos.length }})</h2>
-      
-      <div *ngIf="photos.length === 0" class="no-photos">
-        <p>No photos uploaded yet. Share the guest URL or QR code with guests!</p>
-      </div>
-
-      <div class="photos-grid" *ngIf="photos.length > 0">
-        <div class="photo-card" *ngFor="let photo of photos">
-          <div class="photo-image">
-            <img [src]="'http://localhost:8080' + photo.fileUrl" [alt]="photo.fileName">
-          </div>
-          <div class="photo-info">
-            <p class="uploader-name">{{ photo.uploaderName }}</p>
-            <p class="upload-time">{{ photo.uploadedAt | date:'short' }}</p>
-          </div>
-          <div class="photo-actions">
-            <a [href]="'http://localhost:8080' + photo.fileUrl" target="_blank" class="btn-download">Download</a>
-            <button (click)="deletePhoto(photo.id)" class="btn-delete-small">Delete</button>
-          </div>
-        </div>
-      </div>
+      <h3>Could not load event</h3>
+      <p>{{ errorMessage }}</p>
+      <button (click)="goBack()" class="btn btn-outline mt-1">Back to dashboard</button>
     </div>
   </div>
 </div>
+
+<div class="page" *ngIf="event">
+  <div *ngIf="errorMessage" class="alert alert-error mb-2">
+    <app-icon name="alert" [size]="18"></app-icon>
+    <span>{{ errorMessage }}</span>
+  </div>
+  <div *ngIf="successMessage" class="alert alert-success mb-2">
+    <app-icon name="check" [size]="18"></app-icon>
+    <span>{{ successMessage }}</span>
+  </div>
+
+  <div class="page-header">
+    <div style="min-width: 0;">
+      <h1>{{ event.name }}</h1>
+      <div class="row mt-1" style="row-gap: 6px;">
+        <span class="badge badge-gray">
+          <app-icon name="calendar" [size]="13"></app-icon>
+          {{ formatDate(event.date) }}
+        </span>
+        <span class="badge badge-gray">
+          <app-icon name="clock" [size]="13"></app-icon>
+          {{ formatTime(event.startTime) }}
+        </span>
+        <span class="badge badge-amber">
+          <app-icon name="photo" [size]="13"></app-icon>
+          {{ event.photoCount }} {{ event.photoCount === 1 ? 'photo' : 'photos' }}
+        </span>
+      </div>
+    </div>
+    <div class="row">
+      <button (click)="downloadAllPhotos()" class="btn btn-primary" [disabled]="photos.length === 0 || downloadingZip">
+        <span class="spinner" *ngIf="downloadingZip"></span>
+        <app-icon name="download" *ngIf="!downloadingZip" [size]="18"></app-icon>
+        {{ downloadingZip ? 'Preparing ZIP…' : 'Download ZIP' }}
+      </button>
+      <button (click)="deleteEvent()" class="icon-btn danger" title="Delete event" aria-label="Delete event">
+        <app-icon name="trash" [size]="18"></app-icon>
+      </button>
+    </div>
+  </div>
+
+  <!-- Share section -->
+  <section class="share-section">
+    <div class="share-head">
+      <h2 class="section-title">Share with guests</h2>
+      <p class="muted">Send the guest link or QR code so attendees can add their photos.</p>
+    </div>
+
+    <div class="share-grid">
+      <div class="card card-pad share-card">
+        <div class="share-card-icon">
+          <app-icon name="link" [size]="20"></app-icon>
+        </div>
+        <h3 class="share-card-title">Guest link</h3>
+        <p class="muted share-card-sub">Guests use this page to pick a name and start uploading on their phone.</p>
+        <div class="code-chip code-xl mt-1">{{ event.eventCode }}</div>
+        <div class="guest-link-box mt-2">
+          <span>{{ guestUrl }}</span>
+        </div>
+        <div class="share-actions">
+          <button (click)="shareGuest()" class="btn btn-outline btn-sm">
+            <app-icon name="share" [size]="15"></app-icon>
+            Share
+          </button>
+          <button (click)="copyText(guestUrl, 'Guest link')" class="btn btn-outline btn-sm">
+            <app-icon name="copy" [size]="15"></app-icon>
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <div class="card card-pad share-card qr-card">
+        <div class="share-card-icon">
+          <app-icon name="qrcode" [size]="20"></app-icon>
+        </div>
+        <h3 class="share-card-title">Guest QR code</h3>
+        <p class="muted share-card-sub">Show it or print it — scanning opens the album on any phone.</p>
+        <div class="qr-code">
+          <qrcode [qrdata]="guestUrl" [width]="168" [errorCorrectionLevel]="'M'"></qrcode>
+        </div>
+        <div class="share-actions">
+          <button (click)="downloadQr()" class="btn btn-outline btn-sm">
+            <app-icon name="download" [size]="15"></app-icon>
+            Download PNG
+          </button>
+          <button (click)="printQr()" class="btn btn-outline btn-sm">
+            <app-icon name="qrcode" [size]="15"></app-icon>
+            Print
+          </button>
+        </div>
+      </div>
+
+      <div class="card card-pad share-card">
+        <div class="share-card-icon">
+          <app-icon name="photo" [size]="20"></app-icon>
+        </div>
+        <h3 class="share-card-title">Read-only album</h3>
+        <p class="muted share-card-sub">The full gallery for everyone to browse — share it after the event.</p>
+        <div class="guest-link-box">
+          <span>{{ fullAlbumUrl }}</span>
+        </div>
+        <div class="share-actions">
+          <button (click)="shareFullAlbum()" class="btn btn-outline btn-sm">
+            <app-icon name="share" [size]="15"></app-icon>
+            Share
+          </button>
+          <button (click)="copyText(fullAlbumUrl, 'Full album link')" class="btn btn-outline btn-sm">
+            <app-icon name="copy" [size]="15"></app-icon>
+            Copy
+          </button>
+          <a [href]="fullAlbumUrl" target="_blank" rel="noopener" class="btn btn-soft btn-sm">
+            <app-icon name="link" [size]="15"></app-icon>
+            Open
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Live activity -->
+  <div *ngIf="activityFeed.length > 0" class="card card-pad mt-3 activity-card">
+    <h2 class="section-title mb-1">
+      <span class="live-dot small"></span>
+      Live activity
+    </h2>
+    <ul class="activity-list">
+      <li *ngFor="let act of activityFeed" class="activity-row">
+        <span class="activity-mark">
+          <app-icon name="camera" [size]="13"></app-icon>
+        </span>
+        <span class="activity-text">{{ act.message }}</span>
+        <span class="activity-time muted">{{ act.time | date:'HH:mm:ss' }}</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Gallery -->
+  <div class="card card-pad mt-3">
+    <div class="row mb-2">
+      <h2 class="section-title">Gallery</h2>
+      <span class="badge badge-gray">{{ photos.length === 0 ? '—' : photos.length + ' files' }}</span>
+    </div>
+
+    <div *ngIf="photosLoading" class="media-grid">
+      <div class="skeleton skeleton-media" *ngFor="let _ of [1, 2, 3, 4, 5, 6]"></div>
+    </div>
+
+    <div *ngIf="!photosLoading && photos.length === 0" class="empty-state">
+      <div class="empty-icon">
+        <app-icon name="camera" [size]="26"></app-icon>
+      </div>
+      <h3>No photos yet</h3>
+      <p>Share the QR code or guest link with attendees — their uploads will appear here live.</p>
+    </div>
+
+    <div *ngIf="!photosLoading && photos.length > 0" class="media-grid">
+      <div class="media-card" *ngFor="let photo of photos; let i = index">
+        <div class="media-thumb" (click)="openLightbox(i)">
+          <video *ngIf="isVideo(photo)" [src]="photoSrc(photo, 'thumb')" muted playsinline preload="metadata"></video>
+          <img *ngIf="!isVideo(photo)" [src]="photoSrc(photo, 'thumb')" [alt]="photo.fileName" loading="lazy">
+          <span *ngIf="isVideo(photo)" class="play-badge"><span>
+            <app-icon name="video" [size]="18"></app-icon>
+          </span></span>
+        </div>
+        <div class="media-foot">
+          <div class="media-info">
+            <p class="media-title">{{ photo.uploaderName }}</p>
+            <p class="media-sub">{{ photo.uploadedAt | timeAgo }}</p>
+          </div>
+          <div class="media-actions">
+            <a [href]="photoSrc(photo, 'full')" target="_blank" rel="noopener" class="icon-btn" title="Open full size"
+              [attr.aria-label]="'Open ' + photo.fileName">
+              <app-icon name="link" [size]="15"></app-icon>
+            </a>
+            <button (click)="deletePhoto(photo.id)" class="icon-btn danger" title="Delete photo"
+              [attr.aria-label]="'Delete ' + photo.fileName">
+              <app-icon name="trash" [size]="15"></app-icon>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="hasMore" class="text-center mt-3">
+      <button (click)="loadMore()" class="btn btn-outline" [disabled]="loadingMore">
+        <span class="spinner" *ngIf="loadingMore"></span>
+        {{ loadingMore ? 'Loading…' : 'Load more photos' }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<app-lightbox
+  *ngIf="lightboxIndex >= 0 && photos[lightboxIndex]"
+  [photos]="photos"
+  [(index)]="lightboxIndex"
+  (close)="closeLightbox()"
+></app-lightbox>

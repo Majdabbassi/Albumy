@@ -8,6 +8,7 @@ import com.mmea.albumy.model.Photo;
 import com.mmea.albumy.repository.EventRepository;
 import com.mmea.albumy.repository.PhotoRepository;
 import com.mmea.albumy.service.FullAlbumService;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,19 +28,16 @@ public class FullAlbumServiceImpl implements FullAlbumService {
 
     @Override
     @Transactional(readOnly = true)
-    public EventDetailResponse getFullAlbum(String fullAlbumToken) {
+    public EventDetailResponse getFullAlbum(String fullAlbumToken, Long beforeId, int limit) {
         Event event = eventRepository.findByFullAlbumToken(fullAlbumToken)
                 .orElseThrow(() -> ApiException.notFound("Event not found"));
 
-        List<Photo> photos = photoRepository.findByEvent(event);
+        List<Photo> photos = beforeId != null
+                ? photoRepository.findByEventAndIdLessThanOrderByUploadedAtDescIdDesc(
+                        event, beforeId, PageRequest.of(0, Math.min(limit, 200))).getContent()
+                : photoRepository.findByEventOrderByUploadedAtDesc(event);
         List<PhotoResponse> photoResponses = photos.stream()
-                .map(photo -> new PhotoResponse(
-                        photo.getId(),
-                        photo.getGuest().getName(),
-                        photo.getFileName(),
-                        "/files/" + photo.getFileName(),
-                        photo.getUploadedAt()
-                ))
+                .map(PhotoResponse::from)
                 .collect(Collectors.toList());
 
         return new EventDetailResponse(
@@ -52,7 +50,8 @@ public class FullAlbumServiceImpl implements FullAlbumService {
                 event.getOrganizer().getId(),
                 event.getCreatedAt(),
                 photoResponses,
-                photos.size()
+                photos.size(),
+                event.getCoverFileName() == null ? null : "/files/" + event.getCoverFileName()
         );
     }
 }

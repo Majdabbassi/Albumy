@@ -9,6 +9,7 @@ import java.util.Optional;
 
 public interface GuestRepository extends JpaRepository<Guest, Long> {
     Optional<Guest> findByEventAndName(Event event, String name);
+    Optional<Guest> findByEventAndGuestToken(Event event, String guestToken);
     boolean existsByEventAndName(Event event, String name);
     List<Guest> findByEvent(Event event);
 }

@@ -36,6 +36,9 @@ public class Event {
     @Column(unique = true, nullable = false)
     private String fullAlbumToken;
 
+    @Column
+    private String coverFileName;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "organizer_id", nullable = false)
     private User organizer;

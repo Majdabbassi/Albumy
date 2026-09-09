@@ -1,12 +1,13 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { resolveApiUrl } from '../config/api.config';
 
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
-  private apiUrl = 'http://localhost:8080';
+  private readonly apiUrl = resolveApiUrl();
 
   constructor(private http: HttpClient) {}
 
@@ -64,6 +65,19 @@ export class AuthService {
       }
       // Fallback to role field if it exists
       return payload.role || null;
+    } catch (e) {
+      console.error('Error parsing JWT:', e);
+      return null;
+    }
+  }
+
+  getUsername(): string | null {
+    const token = this.getToken();
+    if (!token) return null;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.sub || payload.username || null;
     } catch (e) {
       console.error('Error parsing JWT:', e);
       return null;

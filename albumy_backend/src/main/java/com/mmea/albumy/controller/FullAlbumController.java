@@ -16,8 +16,10 @@ public class FullAlbumController {
     }
 
     @GetMapping("/{fullAlbumToken}")
-    public ResponseEntity<EventDetailResponse> getFullAlbum(@PathVariable String fullAlbumToken) {
-        EventDetailResponse response = fullAlbumService.getFullAlbum(fullAlbumToken);
+    public ResponseEntity<EventDetailResponse> getFullAlbum(@PathVariable String fullAlbumToken,
+                                                           @RequestParam(required = false) Long beforeId,
+                                                           @RequestParam(defaultValue = "60") int limit) {
+        EventDetailResponse response = fullAlbumService.getFullAlbum(fullAlbumToken, beforeId, limit);
         return ResponseEntity.ok(response);
     }
 }

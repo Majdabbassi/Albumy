@@ -1,134 +1,320 @@
-<div class="guest-container">
-  <div *ngIf="loading" class="loading">
-    <p>Loading event...</p>
+<div class="guest-page" *ngIf="loading">
+  <div class="guest-splash">
+    <div class="spinner"></div>
+    <span>Loading event…</span>
   </div>
+</div>
 
-  <div *ngIf="errorMessage && !eventInfo" class="error-message">
-    {{ errorMessage }}
-  </div>
-
-  <div *ngIf="eventInfo" class="guest-content">
-    <div class="event-header">
-      <h1>{{ eventInfo.name }}</h1>
-      <p class="event-datetime">
-        <span>{{ eventInfo.date }}</span> at <span>{{ eventInfo.startTime }}</span>
-      </p>
-    </div>
-
-    <div *ngIf="errorMessage" class="error-message">
-      {{ errorMessage }}
-    </div>
-
-    <div *ngIf="successMessage" class="success-message">
-      {{ successMessage }}
-    </div>
-
-    <div *ngIf="!showUploadSection && !isLoggedIn" class="name-picker-section">
-      <div class="name-picker-card">
-        <h2>Join the Event</h2>
-        <p>Choose a display name to upload photos. Your name must be unique for this event.</p>
-
-        <div class="form-group">
-          <label for="uploaderName">Your Display Name</label>
-          <input
-            id="uploaderName"
-            type="text"
-            [(ngModel)]="uploaderName"
-            (ngModelChange)="checkNameAvailability()"
-            placeholder="Enter your name"
-            [disabled]="nameChecking"
-          >
-          <div class="name-status" *ngIf="uploaderName">
-            <span *ngIf="nameChecking" class="checking">Checking availability...</span>
-            <span *ngIf="!nameChecking && nameAvailable === true" class="available">✓ Name available</span>
-            <span *ngIf="!nameChecking && nameAvailable === false" class="taken">✗ Name already taken</span>
-          </div>
+<div class="guest-page" *ngIf="!loading && !eventInfo">
+  <div class="guest-error-wrap">
+    <div class="card card-pad error-full">
+      <div class="empty-state">
+        <div class="empty-icon">
+          <app-icon name="alert" [size]="26"></app-icon>
         </div>
-
-        <button
-          (click)="submitName()"
-          [disabled]="!nameAvailable || nameChecking || !uploaderName"
-          class="btn-primary"
-        >
-          Join Event
-        </button>
-      </div>
-    </div>
-
-    <div *ngIf="showUploadSection" class="upload-section">
-      <div class="upload-header">
-        <h2>Upload Photos</h2>
-        <p class="welcome-text">Welcome, <strong>{{ uploaderName }}</strong>!</p>
-        <button *ngIf="!isLoggedIn" (click)="changeName()" class="btn-change-name">Change Name</button>
-      </div>
-
-      <div class="upload-card">
-        <div class="upload-area">
-          <input
-            type="file"
-            (change)="onFileSelected($event)"
-            accept="image/*,video/*"
-            multiple
-            #fileInput
-          >
-          <div class="upload-instructions">
-            <p>Click to select photos or videos</p>
-            <p class="small-text">You can select multiple files</p>
-          </div>
-        </div>
-
-        <div *ngIf="selectedFiles.length > 0" class="selected-files">
-          <h3>Selected Files ({{ selectedFiles.length }})</h3>
-          <ul>
-            <li *ngFor="let file of selectedFiles">{{ file.name }}</li>
-          </ul>
-          <div class="upload-actions">
-            <button
-              (click)="uploadPhotos()"
-              [disabled]="uploading"
-              class="btn-primary"
-            >
-              {{ uploading ? 'Uploading...' : 'Upload Photos' }}
-            </button>
-            <button
-              (click)="selectedFiles = []; fileInput.value = ''"
-              [disabled]="uploading"
-              class="btn-secondary"
-            >
-              Clear Selection
-            </button>
-          </div>
-        </div>
-
-        <div *ngIf="uploading" class="upload-progress">
-          <div class="progress-bar">
-            <div class="progress-fill" [style.width.%]="uploadProgress"></div>
-          </div>
-          <p class="progress-text">{{ uploadProgress }}% complete</p>
-        </div>
-      </div>
-
-      <div class="my-photos-section">
-        <h2>My Photos ({{ photos.length }})</h2>
-        
-        <div *ngIf="photos.length === 0" class="no-photos">
-          <p>You haven't uploaded any photos yet.</p>
-        </div>
-
-        <div class="photos-grid" *ngIf="photos.length > 0">
-          <div class="photo-card" *ngFor="let photo of photos">
-            <div class="photo-image">
-              <img [src]="'http://localhost:8080' + photo.fileUrl" [alt]="photo.fileName">
-            </div>
-            <div class="photo-info">
-              <p class="upload-time">{{ photo.uploadedAt | date:'short' }}</p>
-            </div>
-            <div class="photo-actions">
-              <button (click)="downloadPhoto(photo)" class="btn-download">Download</button>
-            </div>
-          </div>
-        </div>
+        <h3>Event not found</h3>
+        <p>{{ errorMessage }}</p>
       </div>
     </div>
   </div>
 </div>
+
+<div class="guest-page" *ngIf="eventInfo">
+  <header class="guest-hero" [style.background]="heroBackground()">
+    <div class="guest-hero-inner">
+      <span class="guest-hero-badge">
+        <app-icon name="sparkles" [size]="14"></app-icon>
+        Shared photo album
+      </span>
+      <h1 class="guest-hero-title">{{ eventInfo.name }}</h1>
+      <div class="guest-hero-meta">
+        <span class="guest-hero-chip">
+          <app-icon name="calendar" [size]="15"></app-icon>
+          {{ formatDate(eventInfo.date) }}
+        </span>
+        <span class="guest-hero-chip">
+          <app-icon name="clock" [size]="15"></app-icon>
+          {{ formatTime(eventInfo.startTime) }}
+        </span>
+      </div>
+      <p class="guest-hero-sub">Every photo from every guest — all in one place. Add yours in seconds.</p>
+    </div>
+  </header>
+
+  <main class="guest-main">
+    <div *ngIf="errorMessage" class="alert alert-error mb-2">
+      <app-icon name="alert" [size]="18"></app-icon>
+      <span>{{ errorMessage }}</span>
+    </div>
+
+    <div *ngIf="successMessage" class="alert alert-success mb-2">
+      <app-icon name="check" [size]="18"></app-icon>
+      <span>{{ successMessage }}</span>
+    </div>
+
+    <div *ngIf="!queueOnline" class="alert alert-warning mb-2">
+      <app-icon name="wifi-off" [size]="18"></app-icon>
+      <span>You're offline. Uploads are paused and will resume automatically when you're back online.</span>
+    </div>
+
+    <!-- Step 1: name picker -->
+    <section *ngIf="!showUploadSection && !isLoggedIn" class="name-card">
+      <div class="name-card-kicker">Step 1 of 2</div>
+      <h2>Join the event</h2>
+      <p class="name-card-sub">
+        Pick a display name so we can organize photos by guest. Your name is unique per event.
+      </p>
+
+      <div class="form-group name-form">
+        <label class="form-label" for="uploaderName">Your display name</label>
+        <input
+          id="uploaderName"
+          class="input"
+          type="text"
+          [(ngModel)]="uploaderName"
+          (ngModelChange)="checkNameAvailability()"
+          placeholder="e.g. Sophie"
+          autocapitalize="words"
+          autocomplete="off"
+        >
+        <div class="name-status mt-1" *ngIf="uploaderName">
+          <span *ngIf="nameChecking" class="checking-name">
+            <span class="spinner spinner-sm"></span>
+            Checking availability…
+          </span>
+          <span *ngIf="!nameChecking && nameAvailable === true" class="ok-name">
+            <app-icon name="check" [size]="15"></app-icon>
+            Name available
+          </span>
+          <span *ngIf="!nameChecking && nameAvailable === false" class="taken-name">
+            <app-icon name="alert" [size]="15"></app-icon>
+            Name already taken for this event
+          </span>
+        </div>
+      </div>
+
+      <button
+        (click)="submitName()"
+        [disabled]="!nameAvailable || nameChecking || !uploaderName"
+        class="btn btn-accent btn-lg btn-block"
+      >
+        <app-icon name="camera" [size]="18"></app-icon>
+        Join event
+      </button>
+    </section>
+
+    <!-- Step 2: upload + own uploads -->
+    <section *ngIf="showUploadSection" class="stack">
+      <div class="welcome-card">
+        <div class="avatar">{{ currentUser ? '' : initials(uploaderName) }}</div>
+        <div class="welcome-copy">
+          <p class="welcome-title">Welcome, <strong>{{ uploaderName }}</strong>!</p>
+          <p class="muted">{{ autoUpload ? 'Select photos or videos and they upload automatically.' : 'Add photos or videos — you decide when they send.' }}</p>
+        </div>
+        <button *ngIf="!isLoggedIn" (click)="changeName()" class="btn btn-outline btn-sm">
+          Change name
+        </button>
+      </div>
+
+      <!-- Upload zone -->
+      <div class="upload-card">
+        <div class="upload-zone" (click)="fileInput.click()" (drop)="onDrop($event)" (dragover)="$event.preventDefault()">
+          <input #fileInput type="file" (change)="onFileSelected($event)" accept="image/*,video/*" multiple hidden>
+          <div class="upload-zone-inner">
+            <span class="upload-zone-icon">
+              <app-icon name="upload" [size]="26"></app-icon>
+            </span>
+            <p class="upload-zone-title">Add photos &amp; videos</p>
+            <p class="upload-zone-sub muted">{{ autoUpload ? 'Tap to browse, or drag & drop. Uploads start instantly.' : 'Tap to browse, or drag & drop. Files are saved on this device until you send them.' }}</p>
+            <span class="upload-zone-badge">Images &amp; video · resumable · works offline</span>
+          </div>
+        </div>
+
+        <div class="upload-toolbar">
+          <label class="btn btn-outline btn-sm camera-btn" role="button" aria-label="Take a photo">
+            <app-icon name="camera" [size]="15"></app-icon>
+            Take photo
+            <input #cameraInput type="file" accept="image/*" capture="environment" (change)="onFileSelected($event)" hidden>
+          </label>
+          <label class="auto-switch" [class.off]="!autoUpload"
+            [title]="autoUpload ? 'Auto-upload on — files send immediately' : 'Auto-upload off — files are saved until you send them'">
+            <span class="switch">
+              <input type="checkbox" [checked]="autoUpload" (change)="setAutoUpload($event.target.checked)" aria-label="Auto-upload">
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </span>
+            <span class="auto-switch-label">{{ autoUpload ? 'Auto-upload on' : 'Auto-upload off' }}</span>
+          </label>
+        </div>
+
+        <!-- Compact queue tray -->
+        <div *ngIf="hasUploads" class="queue-card mt-2">
+          <div class="queue-header">
+            <button type="button" class="queue-toggle" (click)="toggleQueue()" [attr.aria-expanded]="queueExpanded"
+              [attr.aria-controls]="'queue-list'">
+              <span class="queue-head-icon">
+                <app-icon name="upload" [size]="16"></app-icon>
+              </span>
+              <span class="queue-head-title">
+                <span class="queue-head-main"><strong>Uploads</strong>
+                  <span class="badge badge-amber queue-pill">{{ pendingCount }}</span>
+                </span>
+                <span class="queue-head-sub">
+                  <ng-container *ngIf="autoUpload">{{ activeUploads > 0 ? activeUploads + ' uploading' : pendingCount + ' pending' }} · {{ queueTotalProgress() }}%</ng-container>
+                  <ng-container *ngIf="!autoUpload">Saved on this device · {{ pendingCount }} {{ pendingCount === 1 ? 'item' : 'items' }}</ng-container>
+                </span>
+              </span>
+              <span class="progress-track progress-sm queue-head-progress">
+                <span class="progress-fill" [style.width.%]="queueTotalProgress()"></span>
+              </span>
+              <app-icon class="queue-chevron" [name]="queueExpanded ? 'chevron-left' : 'chevron-right'" [size]="16"></app-icon>
+            </button>
+            <button *ngIf="!autoUpload && pendingCount > 0" type="button" class="btn btn-accent btn-sm queue-clear" (click)="uploadAllFiles()">
+              Upload all
+            </button>
+          </div>
+
+          <div id="queue-list" class="queue-list" *ngIf="queueExpanded">
+            <div class="queue-item" *ngFor="let item of queueItems" [class.done]="item.status === 'done'" [class.previewable]="queueThumb(item)">
+              <div class="queue-thumb" (click)="openPreview(item)" title="Preview">
+                <img *ngIf="!isVideoItem(item) && queueThumb(item)" [src]="queueThumb(item)" [alt]="item.fileName" loading="lazy">
+                <span class="queue-type" *ngIf="isVideoItem(item) || !queueThumb(item)">
+                  <app-icon [name]="isVideoItem(item) ? 'video' : 'photo'" [size]="18"></app-icon>
+                </span>
+                <span *ngIf="isVideoItem(item)" class="play-badge"><span>
+                  <app-icon name="video" [size]="12"></app-icon>
+                </span></span>
+              </div>
+              <div class="queue-main">
+                <div class="queue-row">
+                  <p class="queue-name" (click)="openPreview(item)" [title]="item.fileName">{{ item.fileName }}</p>
+                  <span class="queue-status" [class.done]="item.status === 'done'" [class.failed]="item.status === 'failed'">
+                    <span class="spinner spinner-sm" *ngIf="item.status === 'uploading'"></span>
+                    <app-icon [name]="queueIcon(item)" [size]="13"></app-icon>
+                    {{ item.status === 'uploading' ? 'Uploading…' : item.status === 'done' ? 'Uploaded' : item.status === 'failed' ? 'Failed' : autoUpload ? 'Queued' : 'Saved' }}
+                  </span>
+                  <button class="queue-remove" (click)="removeItem(item.id)" aria-label="Remove upload">
+                    <app-icon name="close" [size]="13"></app-icon>
+                  </button>
+                </div>
+                <div class="progress-track progress-sm">
+                  <div class="progress-fill" [style.width.%]="queueProgress(item)"></div>
+                </div>
+                <div class="queue-meta row">
+                  <span class="muted" style="font-size: 0.8rem;">{{ formatFileSize(item.size) }}</span>
+                  <div class="spacer"></div>
+                  <button *ngIf="!autoUpload && (item.status === 'queued' || item.status === 'failed')" (click)="uploadItem(item)" class="btn btn-ghost btn-sm">
+                    Send
+                  </button>
+                  <button *ngIf="item.status === 'failed'" (click)="retryItem(item)" class="btn btn-ghost btn-sm">
+                    Retry
+                  </button>
+                  <span *ngIf="item.status === 'failed' && item.error" class="queue-error">
+                    {{ item.error }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- My uploads -->
+      <div class="card card-pad">
+        <div class="row mb-2">
+          <h2 class="section-title">Your uploads</h2>
+          <span class="badge badge-amber">{{ photos.length === 0 ? '—' : photos.length + (photos.length === 1 ? ' file' : ' files') }}</span>
+        </div>
+
+        <div *ngIf="photosLoading" class="media-grid">
+          <div class="skeleton skeleton-media" *ngFor="let _ of [1, 2, 3, 4, 5, 6]"></div>
+        </div>
+
+        <div *ngIf="!photosLoading && photos.length === 0" class="empty-state">
+          <div class="empty-icon">
+            <app-icon name="photo" [size]="26"></app-icon>
+          </div>
+          <h3>Nothing here yet</h3>
+          <p>Add your first photo or video above — it will appear here as soon as it's ready.</p>
+        </div>
+
+        <div *ngIf="!photosLoading && photos.length > 0" class="media-grid">
+          <div class="media-card" *ngFor="let photo of photos; let i = index">
+            <div class="media-thumb" (click)="openLightbox(i)">
+              <video *ngIf="isVideo(photo)" [src]="photoSrc(photo, 'thumb')" muted playsinline preload="metadata"></video>
+              <img *ngIf="!isVideo(photo)" [src]="photoSrc(photo, 'thumb')" [alt]="photo.fileName" loading="lazy">
+              <span *ngIf="isVideo(photo)" class="play-badge"><span>
+                <app-icon name="video" [size]="18"></app-icon>
+              </span></span>
+            </div>
+            <div class="media-foot">
+              <div class="media-info">
+                <p class="media-name">{{ photo.originalName || photo.fileName }}</p>
+                <p class="media-sub">{{ photo.uploadedAt | timeAgo }}</p>
+              </div>
+              <div class="media-actions">
+                <span *ngIf="photo.status === 'PROCESSING'" class="status-badge processing">Processing…</span>
+                <span *ngIf="photo.status === 'ERROR'" class="status-badge error">Processing failed</span>
+                <button (click)="downloadPhoto(photo)" class="icon-btn" title="Download" [attr.aria-label]="'Download ' + (photo.originalName || photo.fileName)">
+                  <app-icon name="download" [size]="15"></app-icon>
+                </button>
+                <button (click)="removePhoto(photo)" class="icon-btn danger" title="Remove" [attr.aria-label]="'Remove ' + (photo.originalName || photo.fileName)">
+                  <app-icon name="trash" [size]="15"></app-icon>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Queue preview -->
+<div *ngIf="previewItem" class="preview-overlay" (click)="closePreview()">
+  <div class="preview-panel" (click)="$event.stopPropagation()">
+    <div class="preview-media">
+      <video *ngIf="isVideoItem(previewItem) && queueThumb(previewItem)" [src]="queueThumb(previewItem)" controls muted playsinline></video>
+      <img *ngIf="!isVideoItem(previewItem) && queueThumb(previewItem)" [src]="queueThumb(previewItem)" [alt]="previewItem.fileName">
+      <div *ngIf="!queueThumb(previewItem)" class="preview-fallback">
+        <app-icon [name]="isVideoItem(previewItem) ? 'video' : 'photo'" [size]="40"></app-icon>
+      </div>
+    </div>
+    <p class="preview-name">{{ previewItem.fileName }}</p>
+    <p class="preview-sub muted">
+      {{ formatFileSize(previewItem.size) }} · {{ previewItem.status === 'done' ? 'Uploaded' : (previewItem.status === 'failed' ? 'Failed' : 'Queued / uploading') }}
+    </p>
+    <button class="btn btn-ghost btn-sm preview-close" (click)="closePreview()">Close</button>
+  </div>
+</div>
+
+<!-- Remove photo confirmation -->
+<div *ngIf="pendingDelete" class="preview-overlay" (click)="cancelDeletePhoto()">
+  <div class="preview-panel delete-panel" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-label="Remove photo">
+    <div class="delete-thumb">
+      <img *ngIf="photoSrc(pendingDelete, 'thumb')" [src]="photoSrc(pendingDelete, 'thumb')" [alt]="pendingDelete.originalName || pendingDelete.fileName">
+      <div *ngIf="!photoSrc(pendingDelete, 'thumb')" class="delete-thumb-fallback">
+        <app-icon name="trash" [size]="26"></app-icon>
+      </div>
+    </div>
+    <h3 class="delete-title">Remove this photo?</h3>
+    <p class="delete-sub">
+      "{{ pendingDelete.originalName || pendingDelete.fileName }}" will be deleted from this album for everyone. This can't be undone.
+    </p>
+    <div class="delete-actions">
+      <button type="button" class="btn btn-ghost" (click)="cancelDeletePhoto()" [disabled]="deleteSubmitting">Cancel</button>
+      <button type="button" class="btn btn-danger" (click)="confirmDeletePhoto()" [disabled]="deleteSubmitting">
+        <span *ngIf="deleteSubmitting" class="spinner spinner-sm"></span>
+        <app-icon *ngIf="!deleteSubmitting" name="trash" [size]="15"></app-icon>
+        <span>{{ deleteSubmitting ? 'Removing…' : 'Remove photo' }}</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<app-lightbox
+  *ngIf="lightboxIndex >= 0 && photos[lightboxIndex]"
+  [photos]="photos"
+  [(index)]="lightboxIndex"
+  (close)="closeLightbox()"
+></app-lightbox>

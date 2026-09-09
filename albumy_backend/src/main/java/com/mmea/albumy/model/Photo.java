@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -29,6 +30,52 @@ public class Photo {
 
     @Column(nullable = false)
     private String fileName;
+
+    @Column
+    private String originalName;
+
+    @Column
+    private String mimeType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private PhotoStatus status = PhotoStatus.PROCESSING;
+
+    @Column
+    private String sha256;
+
+    @Column
+    private Integer width;
+
+    @Column
+    private Integer height;
+
+    @Column
+    private Long size;
+
+    @Column
+    private Long duration;
+
+    @Column
+    private LocalDate captureDate;
+
+    @Column
+    private String fileNameThumb;
+
+    @Column
+    private String fileNameMed;
+
+    @Column
+    private String fileNameFull;
+
+    @Column
+    private String fileNameWeb;
+
+    @Column
+    private String fileNamePoster;
+
+    @Column
+    private Integer errorCount = 0;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)

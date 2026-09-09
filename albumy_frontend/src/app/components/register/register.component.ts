@@ -3,11 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { IconComponent } from '../../shared/icon/icon.component';
 
 @Component({
   selector: 'app-register',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, IconComponent],
   templateUrl: './register.component.html',
   styleUrls: ['./register.component.css']
 })
@@ -22,6 +23,7 @@ export class RegisterComponent implements OnInit {
   checkingInvite = false;
   errorMessage = '';
   successMessage = '';
+  submitting = false;
 
   constructor(
     private authService: AuthService,
@@ -40,7 +42,7 @@ export class RegisterComponent implements OnInit {
     this.authService.validateInvite(this.inviteToken).subscribe({
       next: (response) => {
         this.inviteValid = response?.valid === true;
-        this.inviteMessage = response?.message || (this.inviteValid ? 'Invite is valid' : 'This invite is not valid');
+        this.inviteMessage = response?.message || (this.inviteValid ? 'Your invite is valid. Create your organizer account.' : 'This invite is not valid');
         this.checkingInvite = false;
       },
       error: () => {
@@ -52,6 +54,10 @@ export class RegisterComponent implements OnInit {
   }
 
   onSubmit(): void {
+    if (this.submitting) {
+      return;
+    }
+
     this.errorMessage = '';
     this.successMessage = '';
 
@@ -60,21 +66,19 @@ export class RegisterComponent implements OnInit {
       return;
     }
 
+    this.submitting = true;
     this.authService.register(this.username, this.password, this.email, this.displayName, this.inviteToken).subscribe({
       next: (response) => {
         this.authService.saveToken(response.token);
-        this.successMessage = 'Registration successful! Redirecting to dashboard...';
+        this.successMessage = 'Registration successful! Redirecting to your dashboard…';
         setTimeout(() => {
           this.router.navigate(['/dashboard']);
         }, 1000);
       },
       error: (err) => {
+        this.submitting = false;
         this.errorMessage = err.error?.message || 'Registration failed';
       }
     });
-  }
-
-  goToLogin(): void {
-    this.router.navigate(['/login']);
   }
 }

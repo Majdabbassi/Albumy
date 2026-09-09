@@ -1,68 +1,90 @@
-<div class="register-container">
-  <div class="register-card">
-    <h2>Registration</h2>
+<div class="auth-page">
+  <div class="auth-decor decor-1" aria-hidden="true"></div>
+  <div class="auth-decor decor-2" aria-hidden="true"></div>
 
-    <div *ngIf="checkingInvite" class="invite-checking">
-      Checking your invite...
+  <div class="auth-card">
+    <a class="auth-brand" [routerLink]="['/login']">
+      <span class="brand-mark">
+        <app-icon name="camera" [size]="18"></app-icon>
+      </span>
+      <span>Albumy</span>
+    </a>
+
+    <h1 class="auth-title">Create your account</h1>
+    <p class="auth-subtitle">Organizers use Albumy to collect every photo from their guests.</p>
+
+    <div *ngIf="checkingInvite" class="alert alert-info mb-3">
+      <span class="spinner spinner-sm"></span>
+      <span>Checking your invite…</span>
     </div>
 
-    <div *ngIf="!checkingInvite && inviteValid" class="invite-valid">
-      {{ inviteMessage }}
+    <div *ngIf="!checkingInvite && inviteValid" class="alert alert-success mb-3">
+      <app-icon name="check" [size]="18"></app-icon>
+      <span>{{ inviteMessage }}</span>
     </div>
 
-    <div *ngIf="!checkingInvite && !inviteValid" class="invite-invalid">
-      {{ inviteMessage }}
+    <div *ngIf="!checkingInvite && !inviteValid" class="alert alert-warning mb-3">
+      <app-icon name="info" [size]="18"></app-icon>
+      <span>{{ inviteMessage }}</span>
     </div>
 
-    <div *ngIf="errorMessage" class="error-message">
-      {{ errorMessage }}
+    <div *ngIf="errorMessage" class="alert alert-error mb-3">
+      <app-icon name="alert" [size]="18"></app-icon>
+      <span>{{ errorMessage }}</span>
     </div>
 
-    <div *ngIf="successMessage" class="success-message">
-      {{ successMessage }}
+    <div *ngIf="successMessage" class="alert alert-success mb-3">
+      <app-icon name="check" [size]="18"></app-icon>
+      <span>{{ successMessage }}</span>
     </div>
 
-    <form (ngSubmit)="onSubmit()" *ngIf="!successMessage">
-      <div class="form-group">
-        <label for="username">Username</label>
+    <form (ngSubmit)="onSubmit()" class="stack" *ngIf="!successMessage" novalidate>
+      <div class="form-group mb-0">
+        <label class="form-label" for="username">Username</label>
         <input
           id="username"
+          class="input"
           type="text"
           [(ngModel)]="username"
           name="username"
           required
+          autocomplete="username"
           placeholder="Choose a username"
         >
       </div>
 
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          [(ngModel)]="password"
-          name="password"
-          required
-          placeholder="Choose a password"
-        >
-      </div>
-
-      <div class="form-group">
-        <label for="displayName">Display Name</label>
+      <div class="form-group mb-0">
+        <label class="form-label" for="displayName">Display name</label>
         <input
           id="displayName"
+          class="input"
           type="text"
           [(ngModel)]="displayName"
           name="displayName"
           required
-          placeholder="Your display name"
+          placeholder="How you appear on event pages"
         >
       </div>
 
-      <div class="form-group">
-        <label for="email">Email (optional)</label>
+      <div class="form-group mb-0">
+        <label class="form-label" for="password">Password</label>
+        <input
+          id="password"
+          class="input"
+          type="password"
+          [(ngModel)]="password"
+          name="password"
+          required
+          autocomplete="new-password"
+          placeholder="Choose a password"
+        >
+      </div>
+
+      <div class="form-group mb-0">
+        <label class="form-label" for="email">Email <span class="muted">(optional)</span></label>
         <input
           id="email"
+          class="input"
           type="email"
           [(ngModel)]="email"
           name="email"
@@ -70,11 +92,19 @@
         >
       </div>
 
-      <button type="submit" [disabled]="!inviteValid || checkingInvite">Register</button>
+      <button
+        type="submit"
+        class="btn btn-primary btn-lg btn-block mt-1"
+        [disabled]="!inviteValid || checkingInvite || submitting || !username || !displayName || !password"
+      >
+        <span class="spinner" *ngIf="submitting"></span>
+        {{ submitting ? 'Creating account…' : 'Create account' }}
+      </button>
     </form>
 
-    <div class="login-link">
-      Already have an account? <a routerLink="/login">Login here</a>
+    <div class="auth-footer">
+      <span>Already have an account?</span>
+      <a [routerLink]="['/login']" class="auth-link">Sign in</a>
     </div>
   </div>
 </div>

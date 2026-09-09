@@ -11,7 +11,9 @@ import java.time.LocalTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EventPublicInfo {
+    private Long id;
     private String name;
     private LocalDate date;
     private LocalTime startTime;
+    private String coverUrl;
 }

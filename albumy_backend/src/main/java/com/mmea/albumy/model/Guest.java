@@ -28,6 +28,9 @@ public class Guest {
     @Column(nullable = false)
     private String name;
 
+    @Column(unique = true)
+    private String guestToken;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

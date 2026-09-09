@@ -1,15 +1,121 @@
 services:
-  postgres:
-    image: postgres:16
-    container_name: albumy-postgres
+  # ---------------------------------------------------------------- MySQL
+  mysql:
+    image: mysql:8.4
+    container_name: albumy-mysql
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-albumy}
-      POSTGRES_USER: ${POSTGRES_USER:-albumy}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-albumy}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-albumy_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-albumy}
+      MYSQL_USER: ${MYSQL_USER:-albumy}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-albumy}
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # --------------------------------------------------------------- Redis
+  redis:
+    image: redis:7-alpine
+    container_name: albumy-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ------------------------------------------------------------- Backend
+  backend:
+    build:
+      context: ./albumy_backend
+    container_name: albumy-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/albumy?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USER: ${MYSQL_USER:-albumy}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-albumy}
+      REDIS_HOST: redis
+      JWT_SECRET: ${JWT_SECRET:-albumy-dev-only-secret-change-me-in-production}
+      UPLOAD_DIR: /app/uploads
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8081}
+    ports:
+      - "8080:8080"
+    volumes:
+      - albumy_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # Media worker: same jar, worker profile (web off), consumes the ffmpeg/ImageIO job queue.
+  worker:
+    build:
+      context: ./albumy_backend
+    container_name: albumy-worker
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/albumy?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DB_USER: ${MYSQL_USER:-albumy}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-albumy}
+      REDIS_HOST: redis
+      UPLOAD_DIR: /app/uploads
+      SPRING_PROFILES_ACTIVE: worker
+      JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
+    volumes:
+      - albumy_uploads:/app/uploads
+
+  # ------------------------------------------------------------ Frontend
+  frontend:
+    build:
+      context: ./albumy_frontend
+    container_name: albumy-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8081:80"
+
+  # ---------------------------------------------------------- phpMyAdmin
+  phpmyadmin:
+    image: phpmyadmin:5.2
+    container_name: albumy-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: ${MYSQL_USER:-albumy}
+      PMA_PASSWORD: ${MYSQL_PASSWORD:-albumy}
+      UPLOAD_LIMIT: 100M
+    ports:
+      - "8082:80"
 
 volumes:
-  postgres-data:
+  mysql-data:
+  albumy_uploads:
+  redis-data:

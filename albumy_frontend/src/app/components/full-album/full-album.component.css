@@ -1,132 +1,241 @@
-.full-album-container {
-  max-width: 1400px;
+.full-album-page {
+  min-height: 100%;
+  background: var(--c-bg);
+}
+
+.error-full {
+  max-width: 480px;
+  margin: 40px auto;
+}
+
+.album-page {
+  max-width: 1200px;
+}
+
+/* ---------------------------------------------------------------------
+   Hero
+   --------------------------------------------------------------------- */
+.album-hero {
+  background:
+    radial-gradient(120% 110% at 12% -12%, rgba(217, 119, 6, 0.14) 0%, transparent 46%),
+    linear-gradient(165deg, #1F2937 0%, #111827 100%);
+  padding: clamp(40px, 8vw, 64px) 16px 52px;
+  position: relative;
+  overflow: hidden;
+}
+
+.album-hero::before {
+  content: '';
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  bottom: -160px;
+  left: -120px;
+}
+
+.album-hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 40px 20px;
-  min-height: 100vh;
-}
-
-.loading {
-  text-align: center;
-  padding: 60px;
-  color: #666;
-  font-size: 18px;
-}
-
-.album-header {
-  text-align: center;
-  margin-bottom: 40px;
-  padding: 30px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  color: white;
-}
-
-.album-header h1 {
-  margin: 0 0 10px 0;
-  font-size: 36px;
-}
-
-.album-datetime {
-  margin: 0 0 5px 0;
-  font-size: 18px;
-  opacity: 0.9;
-}
-
-.photo-count {
-  margin: 0;
-  font-size: 16px;
-  opacity: 0.8;
-}
-
-.photos-section {
-  background: white;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.no-photos {
-  text-align: center;
-  padding: 60px;
-  color: #999;
-}
-
-.photos-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 20px;
-}
-
-.photo-card {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  overflow: hidden;
-  background: white;
-  transition: box-shadow 0.3s;
-}
-
-.photo-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.photo-image {
-  width: 100%;
-  height: 200px;
-  overflow: hidden;
-  background: #f5f5f5;
-}
-
-.photo-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.photo-info {
-  padding: 15px;
-}
-
-.uploader-name {
-  margin: 0 0 5px 0;
-  font-weight: 600;
-  color: #333;
-  font-size: 14px;
-}
-
-.upload-time {
-  margin: 0;
-  color: #999;
-  font-size: 12px;
-}
-
-.photo-actions {
   display: flex;
-  padding: 15px;
-  border-top: 1px solid #e0e0e0;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding-bottom: 8px;
 }
 
-.btn-download {
-  flex: 1;
-  padding: 10px 20px;
-  background: #28a745;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
+.album-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--c-accent-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(217, 119, 6, 0.12);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+
+.album-hero-title {
+  color: #fff;
+  font-size: clamp(1.8rem, 6vw, 2.7rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.album-hero-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.album-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.88rem;
   font-weight: 600;
-  cursor: pointer;
-  transition: background 0.3s;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 7px 14px;
 }
 
-.btn-download:hover {
-  background: #218838;
+.album-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #4ADE80;
+  background: rgba(22, 163, 74, 0.16);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  border-radius: 999px;
+  padding: 4px 12px;
 }
 
-.error-message {
-  background-color: #f8d7da;
-  color: #721c24;
-  padding: 12px;
-  border-radius: 6px;
-  margin-bottom: 20px;
-  border: 1px solid #f5c6cb;
+.album-live .live-dot {
+  background: #4ADE80;
+}
+
+.album-live .live-dot {
+  box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.5);
+  animation: livePulse 1.6s infinite;
+}
+
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(74, 222, 128, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+
+.album-hero-sub {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+}
+
+/* ---------------------------------------------------------------------
+   Toolbar + selection
+   --------------------------------------------------------------------- */
+.album-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.album-toolbar .btn app-icon {
+  margin-right: 6px;
+}
+
+.album-select-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--c-text-secondary);
+}
+
+.album-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-accent);
+}
+
+.select-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(17, 24, 39, 0.55);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  color: transparent;
+  backdrop-filter: blur(3px);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.select-badge.checked {
+  background: var(--c-accent);
+  color: #fff;
+  border-color: var(--c-accent);
+}
+
+.media-card.selected {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px var(--c-accent);
+}
+
+/* ---------------------------------------------------------------------
+   Download progress toast
+   --------------------------------------------------------------------- */
+.dl-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(360px, calc(100vw - 32px));
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 12px 14px;
+  animation: dlSlideUp 0.25s ease;
+}
+
+.dl-toast.done .dl-fill {
+  background: #22C55E;
+}
+
+.dl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--c-text);
+  margin-bottom: 8px;
+}
+
+.dl-head app-icon {
+  color: #22C55E;
+}
+
+.dl-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--c-border);
+  overflow: hidden;
+}
+
+.dl-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--c-accent);
+  transition: width 0.3s ease;
+}
+
+@keyframes dlSlideUp {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }

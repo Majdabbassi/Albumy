@@ -1,40 +1,154 @@
-<div class="full-album-container">
-  <div *ngIf="loading" class="loading">
-    <p>Loading album...</p>
-  </div>
-
-  <div *ngIf="errorMessage && !event" class="error-message">
-    {{ errorMessage }}
-  </div>
-
-  <div *ngIf="event" class="full-album-content">
-    <div class="album-header">
-      <h1>{{ event.name }}</h1>
-      <p class="album-datetime">
-        <span>{{ event.date }}</span> at <span>{{ event.startTime }}</span>
-      </p>
-      <p class="photo-count">{{ photos.length }} photos</p>
+<div class="full-album-page">
+  <div class="page" *ngIf="loading">
+    <div class="spinner-wrap" style="min-height: 50vh;">
+      <span class="spinner"></span>
+      <span>Loading album…</span>
     </div>
+  </div>
 
-    <div class="photos-section">
-      <div *ngIf="photos.length === 0" class="no-photos">
-        <p>No photos uploaded yet.</p>
+  <div class="page" *ngIf="!loading && !event">
+    <div class="card card-pad error-full">
+      <div class="empty-state">
+        <div class="empty-icon">
+          <app-icon name="alert" [size]="26"></app-icon>
+        </div>
+        <h3>Album unavailable</h3>
+        <p>{{ errorMessage }}</p>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="event">
+    <header class="album-hero" [style.background]="heroBackground()">
+      <div class="album-hero-inner">
+        <span class="album-hero-badge">
+          <app-icon name="photo" [size]="14"></app-icon>
+          Shared album
+        </span>
+        <h1 class="album-hero-title">{{ event.name }}</h1>
+        <div class="album-hero-meta">
+          <span class="album-hero-chip">
+            <app-icon name="calendar" [size]="15"></app-icon>
+            {{ formatDate(event.date) }}
+          </span>
+          <span class="album-hero-chip">
+            <app-icon name="clock" [size]="15"></app-icon>
+            {{ formatTime(event.startTime) }}
+          </span>
+          <span class="album-hero-chip">
+            <app-icon name="camera" [size]="15"></app-icon>
+            {{ photos.length }} {{ photos.length === 1 ? 'photo' : 'photos' }} &amp; videos
+          </span>
+        </div>
+        <span *ngIf="live" class="album-live">
+          <span class="live-dot"></span>
+          Live
+        </span>
+        <p class="album-hero-sub">Collected from every guest, in one place.</p>
+      </div>
+    </header>
+
+    <div class="page album-page">
+      <div *ngIf="photos.length === 0 && !photosLoading" class="card card-pad">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <app-icon name="camera" [size]="26"></app-icon>
+          </div>
+          <h3>The gallery is empty</h3>
+          <p>Photos shared by guests will appear here. Check back soon!</p>
+        </div>
       </div>
 
-      <div class="photos-grid" *ngIf="photos.length > 0">
-        <div class="photo-card" *ngFor="let photo of photos">
-          <div class="photo-image">
-            <img [src]="'http://localhost:8080' + photo.fileUrl" [alt]="photo.fileName">
+      <div *ngIf="photosLoading" class="media-grid">
+        <div class="skeleton skeleton-media" *ngFor="let _ of [1, 2, 3, 4, 5, 6, 7, 8]"></div>
+      </div>
+
+      <div *ngIf="!photosLoading && photos.length > 0" class="album-toolbar">
+        <ng-container *ngIf="!selectMode">
+          <button (click)="downloadAll()" class="btn btn-primary btn-sm" [disabled]="batchVisible">
+            <app-icon name="download" [size]="15"></app-icon>
+            Download all
+          </button>
+          <button (click)="enterSelectMode()" class="btn btn-outline btn-sm">
+            <app-icon name="check" [size]="15"></app-icon>
+            Select photos
+          </button>
+        </ng-container>
+        <ng-container *ngIf="selectMode">
+          <button *ngIf="!allSelected" (click)="selectAll()" class="btn btn-ghost btn-sm">Select all</button>
+          <button *ngIf="allSelected" (click)="clearSelection()" class="btn btn-ghost btn-sm">Clear all</button>
+          <span class="album-select-count">
+            <span class="album-dot" *ngIf="selectedCount > 0"></span>
+            {{ selectedCount }} {{ selectedCount === 1 ? 'photo selected' : 'photos selected' }}
+          </span>
+          <div class="spacer"></div>
+          <button (click)="downloadSelected()" class="btn btn-primary btn-sm" [disabled]="batchVisible || selectedCount === 0">
+            <app-icon name="download" [size]="15"></app-icon>
+            Download selected
+          </button>
+          <button (click)="exitSelectMode()" class="btn btn-outline btn-sm" [disabled]="batchVisible">
+            <app-icon name="close" [size]="15"></app-icon>
+            Cancel
+          </button>
+        </ng-container>
+      </div>
+
+      <div *ngIf="!photosLoading && photos.length > 0" class="media-grid">
+        <div class="media-card" *ngFor="let photo of photos; let i = index" [class.selected]="selectMode && isSelected(photo)">
+          <div class="media-thumb" (click)="onMediaClick(photo, i)">
+            <video *ngIf="isVideo(photo)" [src]="photoSrc(photo, 'thumb')" muted playsinline preload="metadata"></video>
+            <img *ngIf="!isVideo(photo)" [src]="photoSrc(photo, 'thumb')" [alt]="photo.fileName" loading="lazy">
+            <span *ngIf="isVideo(photo)" class="play-badge"><span>
+              <app-icon name="video" [size]="18"></app-icon>
+            </span></span>
+            <span *ngIf="selectMode" class="select-badge" [class.checked]="isSelected(photo)">
+              <app-icon *ngIf="isSelected(photo)" name="check" [size]="13"></app-icon>
+            </span>
           </div>
-          <div class="photo-info">
-            <p class="uploader-name">{{ photo.uploaderName }}</p>
-            <p class="upload-time">{{ photo.uploadedAt | date:'short' }}</p>
-          </div>
-          <div class="photo-actions">
-            <button (click)="downloadPhoto(photo)" class="btn-download">Download</button>
+          <div class="media-foot">
+            <div class="media-info">
+              <p class="media-title">{{ photo.uploaderName }}</p>
+              <p class="media-sub">{{ photo.uploadedAt | timeAgo }}</p>
+            </div>
+            <div class="media-actions">
+              <button *ngIf="!selectMode" (click)="downloadPhoto(photo)" class="icon-btn" title="Save to gallery" [attr.aria-label]="'Save ' + (photo.originalName || photo.fileName)">
+                <app-icon name="download" [size]="15"></app-icon>
+              </button>
+            </div>
           </div>
         </div>
+      </div>
+
+      <div *ngIf="batchVisible" class="dl-toast" [class.done]="batchComplete">
+        <div class="dl-head">
+          <ng-container *ngIf="!batchComplete">
+            <span class="spinner spinner-sm"></span>
+            <span class="dl-text">Saving photo {{ batchDone }} of {{ batchTotal }}</span>
+          </ng-container>
+          <ng-container *ngIf="batchComplete">
+            <app-icon name="check" [size]="14"></app-icon>
+            <span class="dl-text">{{ batchTotal }} {{ batchTotal === 1 ? 'photo saved' : 'photos saved' }}</span>
+          </ng-container>
+        </div>
+        <div class="dl-track">
+          <div class="dl-fill" [style.width]="batchProgress + '%'"></div>
+        </div>
+      </div>
+
+      <div *ngIf="hasMore" class="text-center mt-3">
+        <button (click)="loadMore()" class="btn btn-outline" [disabled]="loadingMore">
+          <span class="spinner" *ngIf="loadingMore"></span>
+          {{ loadingMore ? 'Loading…' : 'Load more photos' }}
+        </button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Lightbox -->
+<app-lightbox
+  *ngIf="lightboxIndex >= 0 && photos[lightboxIndex]"
+  [photos]="photos"
+  [(index)]="lightboxIndex"
+  (close)="closeLightbox()"
+></app-lightbox>

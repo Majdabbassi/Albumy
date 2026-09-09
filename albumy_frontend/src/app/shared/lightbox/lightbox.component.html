@@ -1,0 +1,55 @@
+<div class="lightbox" role="dialog" aria-modal="true" aria-label="Photo preview" (click)="onBackdrop($event)">
+  <button type="button" #closeBtn class="lightbox-btn lightbox-close" (click)="close.emit()" aria-label="Close preview">
+    <app-icon name="close" [size]="22"></app-icon>
+  </button>
+
+  <div class="lightbox-content">
+    <button
+      *ngIf="index > 0"
+      type="button"
+      class="lightbox-btn lightbox-nav lightbox-nav-prev"
+      (click)="step(-1)"
+      aria-label="Previous photo"
+    >
+      <app-icon name="chevron-left" [size]="24"></app-icon>
+    </button>
+
+    <div class="lightbox-stage" (touchstart)="onTouchStart($event)" (touchend)="onTouchEnd($event)">
+      <video
+        *ngIf="isVideo(photos[index])"
+        [src]="photoSrc(photos[index])"
+        controls
+        autoplay
+        playsinline
+      ></video>
+      <img
+        *ngIf="!isVideo(photos[index])"
+        [src]="photoSrc(photos[index], 'full')"
+        [alt]="photos[index]?.fileName || 'Event photo'"
+      >
+    </div>
+
+    <div class="lightbox-footer">
+      <div class="lightbox-caption">
+        <span class="lightbox-name">{{ uploaderName(photos[index]) }}</span>
+        <span class="lightbox-time">{{ photos[index]?.uploadedAt | date:'MMM d, yyyy · h:mm a' }}</span>
+      </div>
+      <div class="lightbox-actions">
+        <button type="button" class="lightbox-btn lightbox-action" (click)="download(photos[index])" aria-label="Download full photo">
+          <app-icon name="download" [size]="18"></app-icon>
+        </button>
+        <span class="lightbox-count">{{ index + 1 }} / {{ photos.length }}</span>
+      </div>
+    </div>
+
+    <button
+      *ngIf="index < photos.length - 1"
+      type="button"
+      class="lightbox-btn lightbox-nav lightbox-nav-next"
+      (click)="step(1)"
+      aria-label="Next photo"
+    >
+      <app-icon name="chevron-right" [size]="24"></app-icon>
+    </button>
+  </div>
+</div>

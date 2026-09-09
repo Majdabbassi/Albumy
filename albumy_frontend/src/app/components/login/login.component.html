@@ -1,41 +1,71 @@
-<div class="login-container">
-  <div class="login-card">
-    <h2>Login</h2>
-    
-    <div *ngIf="errorMessage" class="error-message">
-      {{ errorMessage }}
+<div class="auth-page">
+  <div class="auth-decor decor-1" aria-hidden="true"></div>
+  <div class="auth-decor decor-2" aria-hidden="true"></div>
+
+  <div class="auth-card">
+    <a class="auth-brand" [routerLink]="['/login']">
+      <span class="brand-mark">
+        <app-icon name="camera" [size]="18"></app-icon>
+      </span>
+      <span>Albumy</span>
+    </a>
+
+    <h1 class="auth-title">Welcome back</h1>
+    <p class="auth-subtitle">Sign in to manage your events and guest albums.</p>
+
+    <div *ngIf="errorMessage" class="alert alert-error mb-3">
+      <app-icon name="alert" [size]="18"></app-icon>
+      <span>{{ errorMessage }}</span>
     </div>
-    
-    <form (ngSubmit)="onSubmit()">
-      <div class="form-group">
-        <label for="username">Username</label>
+
+    <form (ngSubmit)="onSubmit()" class="stack" novalidate>
+      <div class="form-group mb-0">
+        <label class="form-label" for="username">Username</label>
         <input
           id="username"
+          class="input"
           type="text"
           [(ngModel)]="username"
           name="username"
           required
+          autocomplete="username"
           placeholder="Enter your username"
         >
       </div>
-      
-      <div class="form-group">
-        <label for="password">Password</label>
+
+      <div class="form-group mb-0">
+        <label class="form-label" for="password">Password</label>
         <input
           id="password"
+          class="input"
           type="password"
           [(ngModel)]="password"
           name="password"
           required
+          autocomplete="current-password"
           placeholder="Enter your password"
         >
       </div>
-      
-      <button type="submit">Login</button>
+
+      <button
+        type="submit"
+        class="btn btn-primary btn-lg btn-block mt-1"
+        [disabled]="submitting || !username || !password"
+      >
+        <span class="spinner" *ngIf="submitting"></span>
+        {{ submitting ? 'Signing in…' : 'Sign in' }}
+      </button>
     </form>
-    
-    <div class="register-link">
-      Don't have an account? <a [routerLink]="['/register']">Register here</a>
+
+    <div class="auth-footer">
+      <span>Don't have an account?</span>
+      <a [routerLink]="['/register']" class="auth-link">Request access</a>
+    </div>
+
+    <div class="demo-hint">
+      <p class="demo-hint-title">Demo accounts</p>
+      <div class="demo-hint-item"><code>demo_admin</code> / <code>demo_admin_password</code></div>
+      <div class="demo-hint-item"><code>demo_organizer</code> / <code>demo_organizer_password</code></div>
     </div>
   </div>
 </div>

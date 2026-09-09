@@ -5,8 +5,11 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
+    "build:capacitor": "ng build --configuration capacitor",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "cap:sync": "npm run build:capacitor && cap sync android",
+    "cap:open": "npm run cap:sync && cap open android"
   },
   "prettier": {
     "printWidth": 100,
@@ -28,10 +31,16 @@
     "@angular/forms": "^20.3.0",
     "@angular/platform-browser": "^20.3.0",
     "@angular/router": "^20.3.0",
-    "angularx-qrcode": "^17.0.1",
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@stomp/stompjs": "^7.3.0",
+    "angularx-qrcode": "^20.0.0",
+    "idb-keyval": "^6.3.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
-    "zone.js": "^0.16.2"
+    "zone.js": "~0.15.0"
   },
   "devDependencies": {
     "@angular/build": "^20.3.9",

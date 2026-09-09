@@ -4,6 +4,7 @@ import com.mmea.albumy.model.Event;
 import com.mmea.albumy.model.Guest;
 import com.mmea.albumy.model.Invite;
 import com.mmea.albumy.model.Photo;
+import com.mmea.albumy.model.PhotoStatus;
 import com.mmea.albumy.model.User;
 import com.mmea.albumy.repository.EventRepository;
 import com.mmea.albumy.repository.GuestRepository;
@@ -12,6 +13,7 @@ import com.mmea.albumy.repository.PhotoRepository;
 import com.mmea.albumy.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +33,7 @@ import java.util.UUID;
 import javax.imageio.ImageIO;
 
 @Component
+@Profile("!worker")
 public class DataInitializer implements CommandLineRunner {
 
     private static final String CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -122,12 +125,14 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedDemoEvent(User organizer) {
-        if (eventRepository.findByName(DEMO_EVENT_NAME).isPresent()) {
+        boolean eventExists = eventRepository.findByName(DEMO_EVENT_NAME).isPresent();
+        Event event = eventExists ? eventRepository.findByName(DEMO_EVENT_NAME).get() : newEvent(organizer);
+        if (!eventExists) {
+            eventRepository.save(event);
+        }
+        if (photoRepository.countByEvent(event) > 0) {
             return;
         }
-
-        Event event = newEvent(organizer);
-        eventRepository.save(event);
 
         List<String[]> uploads = List.of(
                 new String[]{"Amelie", "3"},
@@ -147,12 +152,21 @@ public class DataInitializer implements CommandLineRunner {
 
             for (int i = 0; i < count; i++) {
                 String fileName = UUID.randomUUID() + ".png";
-                generatePlaceholderImage(fileName, photoIndex);
+                long fileSize = generatePlaceholderImage(fileName, photoIndex);
 
                 Photo photo = new Photo();
                 photo.setEvent(event);
                 photo.setGuest(guest);
                 photo.setFileName(fileName);
+                photo.setOriginalName(fileName);
+                photo.setMimeType("image/png");
+                photo.setSize(fileSize);
+                photo.setFileNameThumb(fileName);
+                photo.setFileNameMed(fileName);
+                photo.setFileNameFull(fileName);
+                photo.setWidth(640);
+                photo.setHeight(640);
+                photo.setStatus(PhotoStatus.READY);
                 photoRepository.save(photo);
                 photoIndex++;
             }
@@ -181,7 +195,7 @@ public class DataInitializer implements CommandLineRunner {
         return event;
     }
 
-    private void generatePlaceholderImage(String fileName, int index) {
+    private long generatePlaceholderImage(String fileName, int index) {
         int size = 640;
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
         Graphics2D g2d = image.createGraphics();
@@ -200,6 +214,7 @@ public class DataInitializer implements CommandLineRunner {
         try {
             Path target = Paths.get(uploadDir, fileName);
             ImageIO.write(image, "png", target.toFile());
+            return Files.size(target);
         } catch (IOException e) {
             throw new RuntimeException("Failed to seed demo photo", e);
         }

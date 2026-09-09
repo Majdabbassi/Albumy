@@ -1,0 +1,43 @@
+[33m❯[39m Building...
+[32m✔[39m Building...
+[1mInitial chunk files[22m[2m | [22m[1mNames[22m        [2m | [22m [1mRaw size[22m
+[32mmain.js[39m            [2m | [22m[2mmain[22m         [2m | [22m[36m310.03 kB[39m[2m | [22m
+[32mstyles.css[39m         [2m | [22m[2mstyles[22m       [2m | [22m [36m18.45 kB[39m[2m | [22m
+
+[1m [22m                  [2m | [22m[1mInitial total[22m[2m | [22m[1m328.48 kB[22m
+
+Application bundle generation complete. [6.338 seconds] - 2026-09-09T08:39:57.958Z
+
+Watch mode enabled. Watching for file changes...
+NOTE: Raw file sizes do not reflect development server per-request transformations.
+[2m9:39:58 AM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m Re-optimizing dependencies because lockfile has changed
+[2m9:39:58 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because lockfile has changed
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m4200[22m/[39m
+[1m[31m[2m9:47:56 AM[22m[1m [31m[1m[vite][22m[1m[31m [31mws proxy error:[31m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1134:18)
+    at afterConnectMultiple (node:net:1715:7)[39m[22m
+[1m[31m[2m9:47:59 AM[22m[1m [31m[1m[vite][22m[1m[31m [31mws proxy error:[31m
+Error: socket hang up
+    at Socket.socketOnEnd (node:_http_client:598:25)
+    at Socket.emit (node:events:520:35)
+    at endReadableNT (node:internal/streams/readable:1701:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)[39m[22m
+[1m[31m[2m9:48:02 AM[22m[1m [31m[1m[vite][22m[1m[31m [31mws proxy error:[31m
+Error: socket hang up
+    at Socket.socketOnEnd (node:_http_client:598:25)
+    at Socket.emit (node:events:520:35)
+    at endReadableNT (node:internal/streams/readable:1701:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)[39m[22m
+[1m[31m[2m9:48:05 AM[22m[1m [31m[1m[vite][22m[1m[31m [31mws proxy error:[31m
+Error: socket hang up
+    at Socket.socketOnEnd (node:_http_client:598:25)
+    at Socket.emit (node:events:520:35)
+    at endReadableNT (node:internal/streams/readable:1701:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)[39m[22m
+[1m[31m[2m9:48:08 AM[22m[1m [31m[1m[vite][22m[1m[31m [31mws proxy error:[31m
+Error: socket hang up
+    at Socket.socketOnEnd (node:_http_client:598:25)
+    at Socket.emit (node:events:520:35)
+    at endReadableNT (node:internal/streams/readable:1701:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)[39m[22m

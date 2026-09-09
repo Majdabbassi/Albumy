@@ -1,12 +1,13 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpContext } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { resolveApiUrl } from '../config/api.config';
 
 @Injectable({
   providedIn: 'root'
 })
 export class EventService {
-  private apiUrl = 'http://localhost:8080';
+  private readonly apiUrl = resolveApiUrl();
 
   constructor(private http: HttpClient) {}
 
@@ -16,14 +17,25 @@ export class EventService {
     });
   }
 
-  getEvent(id: number, token: string): Observable<any> {
+  getEvent(id: number, token: string, beforeId?: number, limit = 60): Observable<any> {
+    let params: any = { limit };
+    if (beforeId) {
+      params.beforeId = beforeId;
+    }
     return this.http.get(`${this.apiUrl}/events/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      params
     });
   }
 
   createEvent(name: string, date: string, startTime: string, token: string): Observable<any> {
     return this.http.post(`${this.apiUrl}/events`, { name, date, startTime }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  updateEvent(id: number, name: string, date: string, startTime: string, token: string): Observable<any> {
+    return this.http.put(`${this.apiUrl}/events/${id}`, { name, date, startTime }, {
       headers: { Authorization: `Bearer ${token}` }
     });
   }
@@ -34,9 +46,23 @@ export class EventService {
     });
   }
 
+  setEventCover(id: number, file: File, token: string): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.apiUrl}/events/${id}/cover`, formData, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
   deletePhoto(photoId: number, token: string): Observable<any> {
     return this.http.delete(`${this.apiUrl}/events/photos/${photoId}`, {
       headers: { Authorization: `Bearer ${token}` }
+    });
+  }
+
+  deleteGuestPhoto(eventCode: string, photoId: number, guestToken: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/events/code/${eventCode}/photos/${photoId}`, {
+      headers: { 'X-Guest-Token': guestToken }
     });
   }
 
@@ -52,23 +78,66 @@ export class EventService {
   }
 
   isNameAvailable(eventCode: string, name: string): Observable<boolean> {
-    return this.http.get<boolean>(`${this.apiUrl}/events/code/${eventCode}/name-available?name=${name}`);
+    return this.http.get<boolean>(`${this.apiUrl}/events/code/${eventCode}/name-available?name=${encodeURIComponent(name)}`);
   }
 
-  uploadPhoto(eventCode: string, uploaderName: string, file: File): Observable<any> {
+  claimGuest(eventCode: string, name: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/events/code/${eventCode}/claim`, { name });
+  }
+
+  uploadPhoto(eventCode: string, uploaderName: string, file: File, guestToken?: string): Observable<any> {
     const formData = new FormData();
     formData.append('file', file);
     if (uploaderName) {
       formData.append('uploaderName', uploaderName);
     }
-    return this.http.post(`${this.apiUrl}/events/code/${eventCode}/photos`, formData);
+    const headers: any = guestToken ? { 'X-Guest-Token': guestToken } : {};
+    return this.http.post(`${this.apiUrl}/events/code/${eventCode}/photos`, formData, { headers });
   }
 
-  getPhotosByUploader(eventCode: string, uploaderName: string): Observable<any> {
-    return this.http.get(`${this.apiUrl}/events/code/${eventCode}/photos?uploaderName=${uploaderName}`);
+  getPhotosByUploader(eventCode: string, uploaderName: string, guestToken?: string): Observable<any> {
+    const params: any = {};
+    if (!guestToken && uploaderName) {
+      params.uploaderName = uploaderName;
+    }
+    const headers: any = guestToken ? { 'X-Guest-Token': guestToken } : {};
+    return this.http.get(`${this.apiUrl}/events/code/${eventCode}/photos`, { params, headers });
   }
 
-  getFullAlbum(fullAlbumToken: string): Observable<any> {
-    return this.http.get(`${this.apiUrl}/events/full/${fullAlbumToken}`);
+  getFullAlbum(fullAlbumToken: string, beforeId?: number, limit = 60): Observable<any> {
+    const params: any = { limit };
+    if (beforeId) {
+      params.beforeId = beforeId;
+    }
+    return this.http.get(`${this.apiUrl}/events/full/${fullAlbumToken}`, { params });
+  }
+
+  // ------------------------------------------------------------------
+  // Chunked / resumable uploads
+  // ------------------------------------------------------------------
+
+  initChunkedUpload(eventCode: string, guestToken: string, fileName: string, mimeType: string, size: number, totalChunks: number): Observable<any> {
+    return this.http.post(`${this.apiUrl}/uploads`, {
+      eventCode,
+      guestToken,
+      fileName,
+      mimeType,
+      size,
+      totalChunks
+    });
+  }
+
+  uploadChunk(uploadId: string, chunkIndex: number, data: Blob): Observable<any> {
+    return this.http.put(`${this.apiUrl}/uploads/${uploadId}/chunks/${chunkIndex}`, data, {
+      headers: { 'Content-Type': 'application/octet-stream' }
+    });
+  }
+
+  getReceivedChunks(uploadId: string): Observable<number[]> {
+    return this.http.get<number[]>(`${this.apiUrl}/uploads/${uploadId}/chunks`);
+  }
+
+  completeChunkedUpload(uploadId: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/uploads/${uploadId}/complete`, {});
   }
 }

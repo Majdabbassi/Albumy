@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Albumy</string>
+    <string name="title_activity_main">Albumy</string>
+    <string name="package_name">com.albumy.app</string>
+    <string name="custom_url_scheme">com.albumy.app</string>
+</resources>

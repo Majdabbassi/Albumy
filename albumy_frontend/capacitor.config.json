@@ -1,0 +1,11 @@
+{
+  "appId": "com.albumy.app",
+  "appName": "Albumy",
+  "webDir": "dist/albumy_frontend/browser",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

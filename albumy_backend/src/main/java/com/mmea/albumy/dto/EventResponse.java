@@ -20,4 +20,7 @@ public class EventResponse {
     private String fullAlbumToken;
     private Long organizerId;
     private LocalDateTime createdAt;
+    private long photoCount;
+    private String coverThumb;
+    private String coverUrl;
 }
