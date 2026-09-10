@@ -14,12 +14,17 @@ import com.mmea.albumy.repository.EventRepository;
 import com.mmea.albumy.repository.GuestRepository;
 import com.mmea.albumy.repository.PhotoRepository;
 import com.mmea.albumy.repository.UserRepository;
+import com.mmea.albumy.security.RealtimeTicketService;
 import com.mmea.albumy.service.EventService;
 import com.mmea.albumy.service.RealtimeEventsService;
+import com.mmea.albumy.util.FileUrls;
+import com.mmea.albumy.util.MediaFileTypes;
+import com.mmea.albumy.util.PhotoFiles;
+import com.mmea.albumy.util.RandomUtil;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.PathResource;
-import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,11 +32,13 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.SecureRandom;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
@@ -40,25 +47,27 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class EventServiceImpl implements EventService {
 
-    private static final String CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int EVENTS_PAGE_SIZE = 200;
 
     private final EventRepository eventRepository;
     private final PhotoRepository photoRepository;
     private final GuestRepository guestRepository;
-private final UserRepository userRepository;
+    private final UserRepository userRepository;
     private final RealtimeEventsService realtimeEventsService;
+    private final RealtimeTicketService realtimeTicketService;
     private final String uploadDir;
 
     public EventServiceImpl(EventRepository eventRepository, PhotoRepository photoRepository,
                             GuestRepository guestRepository, UserRepository userRepository,
                             RealtimeEventsService realtimeEventsService,
+                            RealtimeTicketService realtimeTicketService,
                             @Value("${upload.dir:uploads}") String uploadDir) {
         this.eventRepository = eventRepository;
         this.photoRepository = photoRepository;
         this.guestRepository = guestRepository;
         this.userRepository = userRepository;
         this.realtimeEventsService = realtimeEventsService;
+        this.realtimeTicketService = realtimeTicketService;
         this.uploadDir = uploadDir;
     }
 
@@ -80,7 +89,7 @@ private final UserRepository userRepository;
 
         String eventCode;
         do {
-            eventCode = generateRandomCode(6);
+            eventCode = RandomUtil.generateRandomCode(6);
         } while (eventRepository.existsByEventCode(eventCode));
         event.setEventCode(eventCode);
 
@@ -102,29 +111,51 @@ private final UserRepository userRepository;
                 .orElseThrow(() -> ApiException.notFound("User not found"));
 
         List<Event> events;
+        PageRequest pageRequest = PageRequest.of(0, EVENTS_PAGE_SIZE, Sort.by(Sort.Direction.DESC, "createdAt"));
         if (organizer.getRole() == User.Role.ADMIN) {
-            events = eventRepository.findAll();
+            events = eventRepository.findAll(pageRequest).getContent();
         } else {
-            events = eventRepository.findByOrganizer(organizer);
+            events = eventRepository.findByOrganizer(organizer, pageRequest).getContent();
         }
 
+        Map<Long, String> coverThumbs = events.isEmpty() ? Map.of() : latestReadyThumbs(events);
+        Map<Long, Long> photoCounts = events.isEmpty() ? Map.of() : photoCounts(events);
+
         return events.stream()
-                .map(this::toEventResponse)
+                .map(event -> toEventResponse(
+                        event,
+                        coverThumbs.get(event.getId()),
+                        photoCounts.getOrDefault(event.getId(), 0L)))
                 .collect(Collectors.toList());
+    }
+
+    private Map<Long, String> latestReadyThumbs(List<Event> events) {
+        Map<Long, String> thumbs = new HashMap<>();
+        for (Object[] row : photoRepository.findLatestReadyThumbByEvents(events, PhotoStatus.READY)) {
+            if (row[0] instanceof Number eventId && row[1] instanceof String thumb) {
+                thumbs.putIfAbsent(eventId.longValue(), thumb);
+            }
+        }
+        return thumbs;
+    }
+
+    private Map<Long, Long> photoCounts(List<Event> events) {
+        Map<Long, Long> counts = new HashMap<>();
+        for (Object[] row : photoRepository.countByEvents(events)) {
+            if (row[0] instanceof Number eventId && row[1] instanceof Number count) {
+                counts.put(eventId.longValue(), count.longValue());
+            }
+        }
+        return counts;
     }
 
     @Override
     @Transactional
     public EventResponse updateEvent(Long id, CreateEventRequest request, UserDetails userDetails) {
-        User organizer = userRepository.findByUsername(userDetails.getUsername())
-                .orElseThrow(() -> ApiException.notFound("User not found"));
-
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound("Event not found"));
 
-        if (organizer.getRole() != User.Role.ADMIN && !event.getOrganizer().getId().equals(organizer.getId())) {
-            throw ApiException.forbidden("You do not have access to this event");
-        }
+        requireOrganizerAccess(userDetails, event);
 
         event.setName(request.getName());
         event.setDate(request.getDate());
@@ -135,22 +166,19 @@ private final UserRepository userRepository;
     @Override
     @Transactional(readOnly = true)
     public EventDetailResponse getEvent(Long id, UserDetails userDetails, Long beforeId, int limit) {
-        User organizer = userRepository.findByUsername(userDetails.getUsername())
-                .orElseThrow(() -> ApiException.notFound("User not found"));
-
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound("Event not found"));
 
-        if (organizer.getRole() != User.Role.ADMIN && !event.getOrganizer().getId().equals(organizer.getId())) {
-            throw ApiException.forbidden("You do not have access to this event");
-        }
+        requireOrganizerAccess(userDetails, event);
 
-        List<Photo> photos = beforeId != null
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        Page<Photo> page = beforeId != null
                 ? photoRepository.findByEventAndIdLessThanOrderByUploadedAtDescIdDesc(
-                        event, beforeId, PageRequest.of(0, Math.min(limit, 200))).getContent()
-                : photoRepository.findByEventOrderByUploadedAtDesc(event);
+                        event, beforeId, PageRequest.of(0, safeLimit))
+                : photoRepository.findByEventOrderByUploadedAtDescIdDesc(event, PageRequest.of(0, safeLimit));
+        List<Photo> photos = page.getContent();
         List<PhotoResponse> photoResponses = photos.stream()
-                .map(this::toPhotoResponse)
+                .map(PhotoResponse::from)
                 .collect(Collectors.toList());
 
         return new EventDetailResponse(
@@ -163,32 +191,35 @@ private final UserRepository userRepository;
                 event.getOrganizer().getId(),
                 event.getCreatedAt(),
                 photoResponses,
-                photos.size(),
-                coverUrl(event)
+                page.getTotalElements(),
+                FileUrls.coverUrl(event),
+                realtimeTicketService.issue(event.getId())
         );
     }
 
     @Override
     @Transactional
     public void deleteEvent(Long id, UserDetails userDetails) {
-        User organizer = userRepository.findByUsername(userDetails.getUsername())
-                .orElseThrow(() -> ApiException.notFound("User not found"));
-
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound("Event not found"));
 
-        if (organizer.getRole() != User.Role.ADMIN && !event.getOrganizer().getId().equals(organizer.getId())) {
-            throw ApiException.forbidden("You do not have access to this event");
-        }
+        requireOrganizerAccess(userDetails, event);
 
-        List<Photo> photos = photoRepository.findByEvent(event);
-        for (Photo photo : photos) {
-            deletePhotoFiles(photo);
-            realtimeEventsService.photoRemoved(event.getId(), photo.getId());
-        }
-        photoRepository.deleteAll(photos);
+        long lastId = 0;
+        List<Photo> batch;
+        do {
+            batch = photoRepository.findNextBatch(event, lastId, PageRequest.of(0, 500));
+            for (Photo photo : batch) {
+                PhotoFiles.deleteAfterCommit(() -> PhotoFiles.deletePhotoFiles(uploadDir, photo));
+                realtimeEventsService.photoRemoved(event.getId(), photo.getId());
+            }
+            photoRepository.deleteAllInBatch(batch);
+            if (!batch.isEmpty()) {
+                lastId = batch.get(batch.size() - 1).getId();
+            }
+        } while (batch.size() == 500);
 
-        deleteFileIfExists(event.getCoverFileName());
+        PhotoFiles.deleteAfterCommit(() -> PhotoFiles.deleteFileIfExists(uploadDir, event.getCoverFileName()));
 
         List<Guest> guests = guestRepository.findByEvent(event);
         guestRepository.deleteAll(guests);
@@ -199,21 +230,19 @@ private final UserRepository userRepository;
     @Override
     @Transactional
     public EventResponse updateCover(Long id, MultipartFile file, UserDetails userDetails) {
-        User organizer = userRepository.findByUsername(userDetails.getUsername())
-                .orElseThrow(() -> ApiException.notFound("User not found"));
-
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound("Event not found"));
 
-        if (organizer.getRole() != User.Role.ADMIN && !event.getOrganizer().getId().equals(organizer.getId())) {
-            throw ApiException.forbidden("You do not have access to this event");
-        }
+        requireOrganizerAccess(userDetails, event);
 
         if (file == null || file.isEmpty()) {
             throw ApiException.badRequest("File is empty");
         }
         String contentType = file.getContentType();
-        if (contentType == null || !contentType.startsWith("image/")) {
+        if (contentType == null || !contentType.startsWith("image/") || MediaFileTypes.isBlockedMime(contentType)) {
+            throw ApiException.badRequest("Cover must be an image");
+        }
+        if (MediaFileTypes.storedExtension(file.getOriginalFilename()).isEmpty()) {
             throw ApiException.badRequest("Cover must be an image");
         }
 
@@ -221,65 +250,72 @@ private final UserRepository userRepository;
         String fileName = storeFile(file);
         event.setCoverFileName(fileName);
         eventRepository.save(event);
-        deleteFileIfExists(previous);
+        PhotoFiles.deleteAfterCommit(() -> PhotoFiles.deleteFileIfExists(uploadDir, previous));
 
         return toEventResponse(event);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Resource downloadEventPhotosAsZip(Long id, UserDetails userDetails) throws IOException {
-        User organizer = userRepository.findByUsername(userDetails.getUsername())
-                .orElseThrow(() -> ApiException.notFound("User not found"));
-
+    public void writeEventPhotosAsZip(Long id, UserDetails userDetails, OutputStream out) throws IOException {
         Event event = eventRepository.findById(id)
                 .orElseThrow(() -> ApiException.notFound("Event not found"));
 
-        if (organizer.getRole() != User.Role.ADMIN && !event.getOrganizer().getId().equals(organizer.getId())) {
-            throw ApiException.forbidden("You do not have access to this event");
-        }
+        requireOrganizerAccess(userDetails, event);
 
-        List<Photo> photos = photoRepository.findByEvent(event);
+        List<Photo> photos = photoRepository.findWithGuestsByEvent(event);
 
-        Path zipPath = Files.createTempFile("event-" + id + "-", ".zip");
-
-        try (ZipOutputStream zipOut = new ZipOutputStream(Files.newOutputStream(zipPath))) {
+        try (ZipOutputStream zipOut = new ZipOutputStream(out)) {
             for (Photo photo : photos) {
-                Path filePath = Paths.get(uploadDir, photo.getFileName());
-                if (Files.exists(filePath)) {
-                    ZipEntry zipEntry = new ZipEntry(photo.getGuest().getName() + "_" + photo.getFileName());
-                    zipOut.putNextEntry(zipEntry);
-
-                    try (FileInputStream fis = new FileInputStream(filePath.toFile())) {
-                        byte[] buffer = new byte[1024];
-                        int len;
-                        while ((len = fis.read(buffer)) > 0) {
-                            zipOut.write(buffer, 0, len);
-                        }
-                    }
-
-                    zipOut.closeEntry();
+                Path filePath = Paths.get(uploadDir, photo.getFileName()).toAbsolutePath().normalize();
+                if (!Files.exists(filePath)) {
+                    continue;
                 }
+                ZipEntry zipEntry = new ZipEntry(safeZipEntryName(photo));
+                zipOut.putNextEntry(zipEntry);
+
+                try (FileInputStream fis = new FileInputStream(filePath.toFile())) {
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = fis.read(buffer)) > 0) {
+                        zipOut.write(buffer, 0, len);
+                    }
+                }
+
+                zipOut.closeEntry();
             }
         }
+    }
 
-        return new PathResource(zipPath);
+    private String safeZipEntryName(Photo photo) {
+        String guestName = photo.getGuest().getName();
+        String base = photo.getOriginalName() != null && !photo.getOriginalName().isBlank()
+                ? photo.getOriginalName()
+                : photo.getFileName();
+        String clean = sanitizeZipSegment(guestName);
+        String name = sanitizeZipSegment(base);
+        if (name.length() > 180) {
+            name = name.substring(0, 180);
+        }
+        return clean + "_" + name;
+    }
+
+    private String sanitizeZipSegment(String value) {
+        String clean = value == null ? "" : value;
+        clean = clean.replaceAll("[\\\\/:*?\"<>|]", "_");
+        clean = clean.replaceAll("\\.{2,}", "_");
+        return clean.isBlank() ? "guest" : clean;
     }
 
     @Override
     @Transactional
     public void deletePhoto(Long photoId, UserDetails userDetails) {
-        User organizer = userRepository.findByUsername(userDetails.getUsername())
-                .orElseThrow(() -> ApiException.notFound("User not found"));
-
         Photo photo = photoRepository.findById(photoId)
                 .orElseThrow(() -> ApiException.notFound("Photo not found"));
 
-        if (organizer.getRole() != User.Role.ADMIN && !photo.getEvent().getOrganizer().getId().equals(organizer.getId())) {
-            throw ApiException.forbidden("You do not have access to this photo");
-        }
+        requireOrganizerAccess(userDetails, photo);
 
-        deletePhotoFiles(photo);
+        PhotoFiles.deleteAfterCommit(() -> PhotoFiles.deletePhotoFiles(uploadDir, photo));
         realtimeEventsService.photoRemoved(photo.getEvent().getId(), photo.getId());
         photoRepository.delete(photo);
     }
@@ -289,6 +325,10 @@ private final UserRepository userRepository;
                 .findFirstByEventAndStatusOrderByUploadedAtDesc(event, PhotoStatus.READY)
                 .map(Photo::getFileNameThumb)
                 .orElse(null);
+        return toEventResponse(event, coverThumb, photoRepository.countByEvent(event));
+    }
+
+    private EventResponse toEventResponse(Event event, String coverThumb, Long photoCount) {
         return new EventResponse(
                 event.getId(),
                 event.getName(),
@@ -298,23 +338,18 @@ private final UserRepository userRepository;
                 event.getFullAlbumToken(),
                 event.getOrganizer().getId(),
                 event.getCreatedAt(),
-                photoRepository.countByEvent(event),
+                photoCount,
                 coverThumb,
-                coverUrl(event)
+                FileUrls.coverUrl(event)
         );
     }
 
-    private String coverUrl(Event event) {
-        return event.getCoverFileName() == null
-                ? null
-                : "/files/" + event.getCoverFileName();
-    }
-
     private String storeFile(MultipartFile file) {
-        String original = file.getOriginalFilename() != null ? file.getOriginalFilename() : "";
-        int dot = original.lastIndexOf('.');
-        String extension = dot >= 0 ? original.substring(dot).toLowerCase() : "";
-        String fileName = UUID.randomUUID() + extension;
+        String extension = MediaFileTypes.storedExtension(file.getOriginalFilename());
+        if (extension.isEmpty()) {
+            throw ApiException.badRequest("Unsupported file type. Only images are allowed.");
+        }
+        String fileName = UUID.randomUUID() + "." + extension;
         Path filePath = Paths.get(uploadDir, fileName).toAbsolutePath();
         try {
             Files.createDirectories(filePath.getParent());
@@ -325,36 +360,16 @@ private final UserRepository userRepository;
         return fileName;
     }
 
-    private PhotoResponse toPhotoResponse(Photo photo) {
-        return PhotoResponse.from(photo);
+    private User requireOrganizerAccess(UserDetails userDetails, Event event) {
+        User organizer = userRepository.findByUsername(userDetails.getUsername())
+                .orElseThrow(() -> ApiException.notFound("User not found"));
+        if (organizer.getRole() != User.Role.ADMIN && !event.getOrganizer().getId().equals(organizer.getId())) {
+            throw ApiException.forbidden("You do not have access to this event");
+        }
+        return organizer;
     }
 
-    private void deleteFileIfExists(String fileName) {
-        if (fileName == null || fileName.isBlank()) {
-            return;
-        }
-        Path filePath = Paths.get(uploadDir, fileName);
-        try {
-            Files.deleteIfExists(filePath);
-        } catch (IOException e) {
-            // Log but continue with database deletion
-        }
-    }
-
-    private void deletePhotoFiles(Photo photo) {
-        deleteFileIfExists(photo.getFileName());
-        deleteFileIfExists(photo.getFileNameThumb());
-        deleteFileIfExists(photo.getFileNameMed());
-        deleteFileIfExists(photo.getFileNameFull());
-        deleteFileIfExists(photo.getFileNameWeb());
-        deleteFileIfExists(photo.getFileNamePoster());
-    }
-
-    private String generateRandomCode(int length) {
-        StringBuilder code = new StringBuilder();
-        for (int i = 0; i < length; i++) {
-            code.append(CODE_CHARS.charAt(SECURE_RANDOM.nextInt(CODE_CHARS.length())));
-        }
-        return code.toString();
+    private User requireOrganizerAccess(UserDetails userDetails, Photo photo) {
+        return requireOrganizerAccess(userDetails, photo.getEvent());
     }
 }

@@ -1,0 +1,20 @@
+<div class="confirm-overlay" (click)="cancel.emit()">
+  <div class="confirm-panel" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" [attr.aria-label]="title">
+    <div class="confirm-thumb" *ngIf="thumbUrl">
+      <img [src]="thumbUrl" [alt]="title">
+    </div>
+    <div class="confirm-thumb confirm-thumb-fallback" *ngIf="!thumbUrl">
+      <app-icon name="trash" [size]="26"></app-icon>
+    </div>
+    <h3 class="confirm-title">{{ title }}</h3>
+    <p class="confirm-sub" *ngIf="message">{{ message }}</p>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-ghost" (click)="cancel.emit()" [disabled]="busy">{{ cancelLabel }}</button>
+      <button type="button" class="btn btn-danger confirm-primary" (click)="confirm.emit()" [disabled]="busy">
+        <span *ngIf="busy" class="spinner spinner-sm"></span>
+        <app-icon *ngIf="!busy" name="trash" [size]="15"></app-icon>
+        <span>{{ busy ? busyLabel : confirmLabel }}</span>
+      </button>
+    </div>
+  </div>
+</div>

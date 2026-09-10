@@ -1,10 +1,14 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
+const REFRESH_MS = 15_000;
+
 @Pipe({
   name: 'timeAgo',
   pure: false
 })
 export class TimeAgoPipe implements PipeTransform {
+  private cache = new Map<string, { at: number; text: string }>();
+
   transform(value: string | number | Date | null | undefined): string {
     if (value === null || value === undefined || value === '') {
       return '';
@@ -14,7 +18,19 @@ export class TimeAgoPipe implements PipeTransform {
       return '';
     }
 
-    const diffMs = Math.max(0, Date.now() - date.getTime());
+    const key = String(value);
+    const now = Date.now();
+    const cached = this.cache.get(key);
+    if (cached && now - cached.at < REFRESH_MS) {
+      return cached.text;
+    }
+    const text = this.compute(date, now);
+    this.cache.set(key, { at: now, text });
+    return text;
+  }
+
+  private compute(date: Date, now: number): string {
+    const diffMs = Math.max(0, now - date.getTime());
     const sec = Math.floor(diffMs / 1000);
 
     if (sec < 10) {

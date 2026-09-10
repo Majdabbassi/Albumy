@@ -70,6 +70,7 @@ export class RegisterComponent implements OnInit {
     this.authService.register(this.username, this.password, this.email, this.displayName, this.inviteToken).subscribe({
       next: (response) => {
         this.authService.saveToken(response.token);
+        this.authService.saveRole(response.role);
         this.successMessage = 'Registration successful! Redirecting to your dashboard…';
         setTimeout(() => {
           this.router.navigate(['/dashboard']);

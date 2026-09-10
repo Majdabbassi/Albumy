@@ -2,8 +2,35 @@ const MAX_DIMENSION = 2560;
 const JPEG_QUALITY = 0.88;
 
 /** Downsizes an image only when needed, high-quality JPEG (max 2560px, quality 0.88).
- *  Returns null when compression isn't applicable or wouldn't reduce size. */
+ *  Returns null when compression isn't applicable or wouldn't reduce size.
+ *  Runs off the main thread when OffscreenCanvas is available. */
 export function compressImageFile(file: File): Promise<Blob | null> {
+  if (
+    typeof OffscreenCanvas !== 'undefined' &&
+    typeof Worker !== 'undefined' &&
+    typeof createImageBitmap === 'function'
+  ) {
+    return compressWithWorker(file);
+  }
+  return compressOnMainThread(file);
+}
+
+function compressWithWorker(file: File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const worker = new Worker(new URL('./image.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (event: MessageEvent<Blob | null>) => {
+      worker.terminate();
+      resolve(event.data);
+    };
+    worker.onerror = () => {
+      worker.terminate();
+      resolve(null);
+    };
+    worker.postMessage(file);
+  });
+}
+
+function compressOnMainThread(file: File): Promise<Blob | null> {
   return new Promise((resolve) => {
     if (!file.type.startsWith('image/') || file.type === 'image/gif' || (file as any).image) {
       resolve(null);
@@ -37,32 +64,6 @@ export function compressImageFile(file: File): Promise<Blob | null> {
         'image/jpeg',
         JPEG_QUALITY
       );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
-    img.src = url;
-  });
-}
-
-/** Re-encodes an image blob to JPEG via canvas. Returns null on failure. */
-export function reencodeImage(blob: Blob): Promise<Blob | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        resolve(null);
-        return;
-      }
-      ctx.drawImage(img, 0, 0);
-      canvas.toBlob((b) => resolve(b), 'image/jpeg', JPEG_QUALITY);
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);

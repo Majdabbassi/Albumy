@@ -10,7 +10,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "photos")
+@Table(name = "photos", indexes = {
+        @Index(name = "idx_photos_event_upload", columnList = "event_id, uploaded_at, id"),
+        @Index(name = "idx_photos_event_sha256", columnList = "event_id, sha256", unique = true),
+        @Index(name = "idx_photos_event_status", columnList = "event_id, status, uploaded_at")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

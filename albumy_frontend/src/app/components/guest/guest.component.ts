@@ -9,14 +9,21 @@ import { RealtimeService } from '../../services/realtime.service';
 import { UploadQueueService, QueueItem } from '../../services/upload-queue.service';
 import { IconComponent } from '../../shared/icon/icon.component';
 import { LightboxComponent } from '../../shared/lightbox/lightbox.component';
-import { fileUrl } from '../../config/api.config';
+import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
+import { photoSrc as photoSrcUtil, downloadName } from '../../utils/media';
 import { compressImageFile } from '../../utils/image';
 import { TimeAgoPipe } from '../../shared/pipes/time-ago.pipe';
+import { FormatDatePipe } from '../../shared/pipes/format-date.pipe';
+import { FormatTimePipe } from '../../shared/pipes/format-time.pipe';
+import { InitialsPipe } from '../../shared/pipes/initials.pipe';
+import { MediaUrlPipe } from '../../shared/pipes/media-url.pipe';
+import { IsVideoPipe } from '../../shared/pipes/is-video.pipe';
+import { HeroBackgroundPipe } from '../../shared/pipes/hero-background.pipe';
 
 @Component({
   selector: 'app-guest',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent, LightboxComponent, TimeAgoPipe],
+  imports: [CommonModule, FormsModule, IconComponent, LightboxComponent, ConfirmModalComponent, TimeAgoPipe, FormatDatePipe, FormatTimePipe, InitialsPipe, MediaUrlPipe, IsVideoPipe, HeroBackgroundPipe],
   templateUrl: './guest.component.html',
   styleUrls: ['./guest.component.css']
 })
@@ -40,6 +47,8 @@ export class GuestComponent implements OnInit, OnDestroy {
   autoUpload = true;
   processingSelection = false;
   photosLoading = false;
+  guestHasMore = false;
+  guestLoadingMore = false;
   queueExpanded = true;
   previewItem: QueueItem | null = null;
   pendingDelete: any = null;
@@ -51,6 +60,7 @@ export class GuestComponent implements OnInit, OnDestroy {
   private refetchQueued = false;
   private pollTimer: any = null;
   private firstLoadDone = false;
+  private lastRealtimeEvent = 0;
 
   private queueSub?: Subscription;
   private onlineSub?: Subscription;
@@ -75,6 +85,7 @@ export class GuestComponent implements OnInit, OnDestroy {
 
     this.queueSub = this.queue.items$.subscribe((items) => {
       this.queueItems = items.filter((i) => i.eventCode === this.eventCode);
+      this.pruneObjectUrls(new Set(this.queueItems.map((i) => i.id)));
       const missing = this.queueItems
         .filter((i) => i.status === 'done' && i.result?.id && !this.photos.some((p) => p.id === i.result.id))
         .map((i) => i.result);
@@ -102,19 +113,14 @@ export class GuestComponent implements OnInit, OnDestroy {
     this.onlineSub?.unsubscribe();
     this.autoUploadSub?.unsubscribe();
     this.realtimeSub?.unsubscribe();
+    if (this.eventInfo?.id) {
+      this.realtime.offEvent(this.eventInfo.id);
+    }
     this.stopPolling();
     for (const url of this.objectUrls.values()) {
       URL.revokeObjectURL(url);
     }
     this.objectUrls.clear();
-  }
-
-  photoSrc(photo: any, variant?: 'thumb' | 'med' | 'full'): string {
-    if (photo.isVideo) {
-      return fileUrl(variant === 'thumb' ? photo.posterUrl || photo.webUrl || photo.fileUrl : photo.webUrl || photo.fileUrl);
-    }
-    const url = variant === 'thumb' ? photo.thumbUrl : variant === 'med' ? photo.medUrl : variant === 'full' ? photo.fullUrl : photo.fileUrl;
-    return fileUrl(url || photo.fileUrl);
   }
 
   private loadEventInfo(): void {
@@ -136,7 +142,10 @@ export class GuestComponent implements OnInit, OnDestroy {
       return;
     }
     this.realtime.connect();
-    this.realtimeSub = this.realtime.onEvent(this.eventInfo.id).subscribe((msg) => {
+    this.realtimeSub = this.realtime.onEvent(this.eventInfo.id, {
+      'X-Realtime-Token': this.eventInfo.realtimeToken
+    }).subscribe((msg) => {
+      this.lastRealtimeEvent = Date.now();
       if (msg.type === 'PHOTO_REMOVED') {
         const removedId = msg.data?.id;
         if (removedId != null) {
@@ -212,7 +221,7 @@ export class GuestComponent implements OnInit, OnDestroy {
         this.guestToken = res.guestToken;
         localStorage.setItem(`guest_token_${this.eventCode}`, res.guestToken);
         localStorage.setItem(`guest_name_${this.eventCode}`, name);
-this.showUploadSection = true;
+        this.showUploadSection = true;
         this.startUploadSection();
       },
       error: () => {
@@ -258,18 +267,21 @@ this.showUploadSection = true;
     }
     this.processingSelection = true;
     const prepared: { blob: Blob; fileName: string; mimeType: string }[] = [];
-    for (const file of files) {
-      if (file.type.startsWith('image/') && file.type !== 'image/gif') {
-        const compressed = await compressImageFile(file);
-        if (compressed && compressed.size < file.size) {
-          const base = file.name.replace(/\.[^.]+$/, '');
-          prepared.push({ blob: compressed, fileName: `${base}.jpg`, mimeType: 'image/jpeg' });
-          continue;
+    try {
+      for (const file of files) {
+        if (file.type.startsWith('image/') && file.type !== 'image/gif') {
+          const compressed = await compressImageFile(file);
+          if (compressed && compressed.size < file.size) {
+            const base = file.name.replace(/\.[^.]+$/, '');
+            prepared.push({ blob: compressed, fileName: `${base}.jpg`, mimeType: 'image/jpeg' });
+            continue;
+          }
         }
+        prepared.push({ blob: file, fileName: file.name, mimeType: file.type || 'application/octet-stream' });
       }
-      prepared.push({ blob: file, fileName: file.name, mimeType: file.type || 'application/octet-stream' });
+    } finally {
+      this.processingSelection = false;
     }
-    this.processingSelection = false;
     this.queue.enqueue(prepared, this.eventCode, this.guestToken);
     this.successMessage = `${prepared.length} ${prepared.length === 1 ? 'file' : 'files'} added${
       this.autoUpload ? ' — uploading now.' : ' — saved on this device, they only upload when you send them.'
@@ -309,7 +321,7 @@ this.showUploadSection = true;
     this.ensurePolling();
   }
 
-  private refreshMyPhotos(): void {
+  private refreshMyPhotos(append = false): void {
     if (this.fetching) {
       this.refetchQueued = true;
       return;
@@ -318,12 +330,20 @@ this.showUploadSection = true;
       return;
     }
     this.fetching = true;
-    this.eventService.getPhotosByUploader(this.eventCode, this.uploaderName, this.guestToken).subscribe({
+    const beforeId = append && this.photos.length > 0 ? this.photos[this.photos.length - 1].id : undefined;
+    this.eventService.getPhotosByUploader(this.eventCode, this.uploaderName, this.guestToken, beforeId).subscribe({
       next: (list) => {
         this.fetching = false;
-        if (Array.isArray(list)) {
-          this.photos = this.mergePhotos(list);
+        this.guestLoadingMore = false;
+        const photos = Array.isArray(list?.photos) ? list.photos : [];
+        if (Array.isArray(list?.photos) || Array.isArray(list)) {
+          if (append) {
+            this.photos = this.mergePhotos(photos);
+          } else if (this.photosChanged(photos)) {
+            this.photos = this.mergePhotos(photos);
+          }
         }
+        this.guestHasMore = !!list?.hasMore;
         if (this.refetchQueued) {
           this.refetchQueued = false;
           this.refreshMyPhotos();
@@ -337,6 +357,7 @@ this.showUploadSection = true;
       error: () => {
         this.fetching = false;
         this.refetchQueued = false;
+        this.guestLoadingMore = false;
         this.photosLoading = false;
         this.errorMessage = 'Failed to load your uploads.';
         this.autoDismiss();
@@ -344,10 +365,37 @@ this.showUploadSection = true;
     });
   }
 
+  loadMoreGuestPhotos(): void {
+    if (!this.guestHasMore || this.guestLoadingMore || this.fetching) {
+      return;
+    }
+    this.guestLoadingMore = true;
+    this.refreshMyPhotos(true);
+  }
+
+  private pruneObjectUrls(activeIds: Set<string>): void {
+    for (const key of Array.from(this.objectUrls.keys())) {
+      if (!activeIds.has(key)) {
+        const url = this.objectUrls.get(key);
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+        this.objectUrls.delete(key);
+      }
+    }
+  }
+
   private mergePhotos(list: any[]): any[] {
     const byId = new Map<number, any>();
+    for (const photo of this.photos) {
+      if (photo?.id != null) {
+        byId.set(photo.id, photo);
+      }
+    }
     for (const photo of list) {
-      byId.set(photo.id, photo);
+      if (photo?.id != null) {
+        byId.set(photo.id, photo);
+      }
     }
     for (const item of this.queueItems) {
       if (item.status === 'done' && item.result?.id && !byId.has(item.result.id)) {
@@ -360,11 +408,33 @@ this.showUploadSection = true;
     });
   }
 
+  /** True when the polled first page differs from what is already on screen (id prefix compare). */
+  private photosChanged(fresh: any[]): boolean {
+    if (!Array.isArray(fresh) || fresh.length === 0) {
+      return true;
+    }
+    const n = Math.min(this.photos.length, fresh.length);
+    if (n !== fresh.length) {
+      return true;
+    }
+    for (let i = 0; i < n; i++) {
+      if (this.photos[i]?.id !== fresh[i]?.id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private ensurePolling(): void {
     if (this.pollTimer || !this.showUploadSection || !this.guestToken) {
       return;
     }
-    this.pollTimer = setInterval(() => this.refreshMyPhotos(), 4000);
+    this.pollTimer = setInterval(() => {
+      if (Date.now() - this.lastRealtimeEvent < 10_000) {
+        return; // realtime is live, polling would only re-fetch the same first page
+      }
+      this.refreshMyPhotos();
+    }, 4000);
   }
 
   private stopPolling(): void {
@@ -376,14 +446,10 @@ this.showUploadSection = true;
 
   downloadPhoto(photo: any): void {
     const link = document.createElement('a');
-    link.href = this.photoSrc(photo, 'full');
-    link.download = photo.fileName;
+    link.href = photoSrcUtil(photo, 'full');
+    link.download = downloadName(photo);
     link.rel = 'noopener';
     link.click();
-  }
-
-  isVideo(photo: any): boolean {
-    return photo.isVideo === true || /\.(mp4|mov|webm|m4v|3gp)$/i.test(photo.fileName || photo.fileUrl || '');
   }
 
   openLightbox(index: number): void {
@@ -394,30 +460,6 @@ this.showUploadSection = true;
     this.lightboxIndex = -1;
   }
 
-  stepLightbox(direction: number): void {
-    const next = this.lightboxIndex + direction;
-    if (next >= 0 && next < this.photos.length) {
-      this.lightboxIndex = next;
-    }
-  }
-
-  formatDate(date: string): string {
-    return new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  }
-
-  formatTime(time: string): string {
-    const [h, m] = time.split(':').map(Number);
-    return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, {
-      hour: 'numeric',
-      minute: '2-digit'
-    });
-  }
-
   formatFileSize(bytes: number): string {
     if (bytes >= 1024 * 1024) {
       return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
@@ -426,15 +468,6 @@ this.showUploadSection = true;
       return (bytes / 1024).toFixed(0) + ' KB';
     }
     return bytes + ' B';
-  }
-
-  initials(name: string): string {
-    return name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0].toUpperCase())
-      .join('');
   }
 
   get pendingCount(): number {
@@ -520,13 +553,6 @@ this.showUploadSection = true;
     });
   }
 
-  heroBackground(): string {
-    if (!this.eventInfo?.coverUrl) {
-      return '';
-    }
-    return `linear-gradient(180deg, rgba(17,24,39,.8) 0%, rgba(17,24,39,.45) 45%, rgba(17,24,39,.88) 100%), url('${fileUrl(this.eventInfo.coverUrl)}') center / cover no-repeat`;
-  }
-
   queueTotalProgress(): number {
     const active = this.queueItems.filter((i) => i.status !== 'done');
     if (active.length === 0) {
@@ -543,6 +569,6 @@ this.showUploadSection = true;
   private autoDismiss(): void {
     setTimeout(() => {
       this.successMessage = '';
-    }, 4000);
+    }, 3000);
   }
 }

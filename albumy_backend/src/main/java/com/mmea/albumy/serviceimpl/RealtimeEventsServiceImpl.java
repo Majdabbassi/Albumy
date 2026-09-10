@@ -28,13 +28,13 @@ public class RealtimeEventsServiceImpl implements RealtimeEventsService {
     @Override
     public void photoAdded(Photo photo) {
         publish("photos", photo.getEvent().getId(), "PHOTO_ADDED",
-                objectMapper.valueToTree(PhotoResponse.from(photo)), null);
+                objectMapper.valueToTree(PhotoResponse.slim(photo)), null);
     }
 
     @Override
     public void photoReady(Photo photo) {
         publish("photos", photo.getEvent().getId(), "PHOTO_READY",
-                objectMapper.valueToTree(PhotoResponse.from(photo)), null);
+                objectMapper.valueToTree(PhotoResponse.slim(photo)), null);
     }
 
     @Override

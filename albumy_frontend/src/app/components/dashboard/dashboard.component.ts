@@ -7,12 +7,16 @@ import { AuthService } from '../../services/auth.service';
 import { EventService } from '../../services/event.service';
 import { RealtimeService } from '../../services/realtime.service';
 import { IconComponent } from '../../shared/icon/icon.component';
+import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
 import { fileUrl } from '../../config/api.config';
+import { FormatDatePipe } from '../../shared/pipes/format-date.pipe';
+import { FormatTimePipe } from '../../shared/pipes/format-time.pipe';
+import { InitialsPipe } from '../../shared/pipes/initials.pipe';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, IconComponent],
+  imports: [CommonModule, FormsModule, RouterModule, IconComponent, ConfirmModalComponent, FormatDatePipe, FormatTimePipe, InitialsPipe],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css']
 })
@@ -38,9 +42,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
   editEventName = '';
   editEventDate = '';
   editEventStartTime = '';
-  savingEvent = false;
+savingEvent = false;
+  pendingDeleteEventId = 0;
 
   private realtimeSubs = new Subscription();
+  private realtimeEventIds: number[] = [];
 
   constructor(
     private authService: AuthService,
@@ -67,6 +73,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.realtimeSubs.unsubscribe();
+    for (const eventId of this.realtimeEventIds) {
+      this.realtime.offEvent(eventId);
+    }
   }
 
   loadInvites(): void {
@@ -127,7 +136,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.events = data;
         this.loadingEvents = false;
-        this.wireRealtime(data);
+        this.wireRealtime(data, token);
       },
       error: (err) => {
         this.loadingEvents = false;
@@ -136,11 +145,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
   }
 
-  private wireRealtime(events: any[]): void {
+  private wireRealtime(events: any[], token: string | null): void {
     this.realtime.connect();
+    this.realtimeSubs.unsubscribe();
+    this.realtimeSubs = new Subscription();
+    const newIds = new Set(events.map((e) => e.id));
+    for (const id of this.realtimeEventIds) {
+      if (!newIds.has(id)) {
+        this.realtime.offEvent(id);
+      }
+    }
+    this.realtimeEventIds = events.map((e) => e.id);
     for (const event of events) {
       this.realtimeSubs.add(
-        this.realtime.onEvent(event.id).subscribe((msg) => this.handleRealtime(event, msg))
+        this.realtime.onEvent(event.id, {
+          Authorization: `Bearer ${token}`
+        }).subscribe((msg) => this.handleRealtime(event, msg))
       );
     }
   }
@@ -241,7 +261,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   deleteEvent(eventId: number): void {
-    if (!confirm('Are you sure you want to delete this event? All photos will be deleted.')) {
+    this.pendingDeleteEventId = eventId;
+  }
+
+  confirmDeleteEvent(): void {
+    const eventId = this.pendingDeleteEventId;
+    if (!eventId) {
       return;
     }
 
@@ -250,14 +275,20 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
     this.eventService.deleteEvent(eventId, token).subscribe({
       next: () => {
+        this.pendingDeleteEventId = 0;
         this.loadEvents();
         this.successMessage = 'Event deleted.';
         this.autoDismiss();
       },
       error: () => {
+        this.pendingDeleteEventId = 0;
         this.errorMessage = 'Failed to delete event';
       }
     });
+  }
+
+  cancelDeleteEvent(): void {
+    this.pendingDeleteEventId = 0;
   }
 
   viewEvent(eventId: number): void {
@@ -309,30 +340,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
   logout(): void {
     this.authService.removeToken();
     this.router.navigate(['/login']);
-  }
-
-  initials(name: string): string {
-    return name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0].toUpperCase())
-      .join('');
-  }
-
-  formatDate(date: string): string {
-    return new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  }
-
-  formatTime(time: string): string {
-    const [h, m] = time.split(':').map(Number);
-    const d = new Date(2000, 0, 1, h, m);
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
 
   private autoDismiss(): void {

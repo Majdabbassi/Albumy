@@ -12,12 +12,14 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IconComponent } from '../icon/icon.component';
-import { fileUrl } from '../../config/api.config';
+import { photoSrc, downloadName } from '../../utils/media';
+import { MediaUrlPipe } from '../pipes/media-url.pipe';
+import { IsVideoPipe } from '../pipes/is-video.pipe';
 
 @Component({
   selector: 'app-lightbox',
   standalone: true,
-  imports: [CommonModule, IconComponent],
+  imports: [CommonModule, IconComponent, MediaUrlPipe, IsVideoPipe],
   templateUrl: './lightbox.component.html',
   styleUrls: ['./lightbox.component.css']
 })
@@ -96,34 +98,10 @@ export class LightboxComponent implements OnInit, AfterViewInit, OnDestroy {
 
   download(photo: any): void {
     const link = document.createElement('a');
-    link.href = this.photoSrc(photo, 'full');
-    link.download = photo.fileName || 'photo';
+    link.href = photoSrc(photo, 'full');
+    link.download = downloadName(photo);
     link.rel = 'noopener';
     link.click();
-  }
-
-  photoSrc(photo: any, variant?: 'thumb' | 'med' | 'full'): string {
-    if (photo.video || photo.isVideo || /\.(mp4|mov|webm|m4v|3gp)$/i.test(photo.fileName || photo.fileUrl || '')) {
-      return fileUrl(
-        variant === 'thumb'
-          ? photo.posterUrl || photo.webUrl || photo.fileUrl
-          : photo.webUrl || photo.fileUrl
-      );
-    }
-    const url =
-      variant === 'thumb' ? photo.thumbUrl :
-      variant === 'med' ? photo.medUrl :
-      variant === 'full' ? photo.fullUrl :
-      photo.fileUrl;
-    return fileUrl(url || photo.fileUrl);
-  }
-
-  isVideo(photo: any): boolean {
-    return (
-      photo.video === true ||
-      photo.isVideo === true ||
-      /\.(mp4|mov|webm|m4v|3gp)$/i.test(photo.fileName || photo.fileUrl || '')
-    );
   }
 
   uploaderName(photo: any): string {

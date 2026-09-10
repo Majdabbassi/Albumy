@@ -7,12 +7,18 @@ import { RealtimeService } from '../../services/realtime.service';
 import { IconComponent } from '../../shared/icon/icon.component';
 import { LightboxComponent } from '../../shared/lightbox/lightbox.component';
 import { fileUrl } from '../../config/api.config';
+import { downloadName } from '../../utils/media';
 import { TimeAgoPipe } from '../../shared/pipes/time-ago.pipe';
+import { FormatDatePipe } from '../../shared/pipes/format-date.pipe';
+import { FormatTimePipe } from '../../shared/pipes/format-time.pipe';
+import { MediaUrlPipe } from '../../shared/pipes/media-url.pipe';
+import { IsVideoPipe } from '../../shared/pipes/is-video.pipe';
+import { HeroBackgroundPipe } from '../../shared/pipes/hero-background.pipe';
 
 @Component({
   selector: 'app-full-album',
   standalone: true,
-  imports: [CommonModule, IconComponent, LightboxComponent, TimeAgoPipe],
+  imports: [CommonModule, IconComponent, LightboxComponent, TimeAgoPipe, FormatDatePipe, FormatTimePipe, MediaUrlPipe, IsVideoPipe, HeroBackgroundPipe],
   templateUrl: './full-album.component.html',
   styleUrls: ['./full-album.component.css']
 })
@@ -35,7 +41,7 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
   batchComplete = false;
   batchVisible = false;
   private realtimeSub?: Subscription;
-  private resetTimer?: any;
+  private timers: any[] = [];
 
   constructor(
     private route: ActivatedRoute,
@@ -56,33 +62,18 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    if (this.resetTimer) {
-      clearTimeout(this.resetTimer);
-    }
+    this.cancelBatchTimers();
     this.realtimeSub?.unsubscribe();
-  }
-
-  photoSrc(photo: any, variant?: 'thumb' | 'med' | 'full'): string {
-    if (photo.video || /\.(mp4|mov|webm|m4v|3gp)$/i.test(photo.fileName || photo.fileUrl || '')) {
-      return fileUrl(variant === 'thumb' ? photo.posterUrl || photo.webUrl || photo.fileUrl : photo.webUrl || photo.fileUrl);
+    if (this.event?.id) {
+      this.realtime.offEvent(this.event.id);
     }
-    const url =
-      variant === 'thumb' ? photo.thumbUrl :
-      variant === 'med' ? photo.medUrl :
-      variant === 'full' ? photo.fullUrl :
-      photo.fileUrl;
-    return fileUrl(url || photo.fileUrl);
   }
 
-  isVideo(photo: any): boolean {
-    return photo.video === true || /\.(mp4|mov|webm|m4v|3gp)$/i.test(photo.fileName || photo.fileUrl || '');
-  }
-
-  heroBackground(): string {
-    if (!this.event?.coverUrl) {
-      return '';
+  private cancelBatchTimers(): void {
+    for (const t of this.timers) {
+      clearTimeout(t);
     }
-    return `linear-gradient(180deg, rgba(17,24,39,.82) 0%, rgba(17,24,39,.5) 45%, rgba(17,24,39,.9) 100%), url('${fileUrl(this.event.coverUrl)}') center / cover no-repeat`;
+    this.timers = [];
   }
 
   loadFullAlbum(): void {
@@ -91,7 +82,7 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.event = data;
         this.photos = data.photos || [];
-        this.hasMore = (data.photos?.length || 0) === 60;
+        this.hasMore = (data.photoCount || 0) > this.photos.length;
         this.loading = false;
         this.photosLoading = false;
         this.watchRealtime();
@@ -115,7 +106,7 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
         const existing = new Set(this.photos.map((p) => p.id));
         const fresh = (data.photos || []).filter((p: any) => !existing.has(p.id));
         this.photos = [...this.photos, ...fresh];
-        this.hasMore = (data.photos?.length || 0) === 60;
+        this.hasMore = (data.photoCount || 0) > this.photos.length;
         this.loadingMore = false;
       },
       error: () => {
@@ -129,14 +120,20 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
       return;
     }
     this.realtime.connect();
-    this.realtimeSub = this.realtime.onEvent(this.event.id).subscribe((msg) => {
+    this.realtimeSub = this.realtime.onEvent(this.event.id, {
+      'X-Realtime-Token': this.event.realtimeToken
+    }).subscribe((msg) => {
       this.live = true;
       if (msg.type === 'PHOTO_ADDED' || msg.type === 'PHOTO_READY') {
         if (msg.data?.id && !this.photos.some((p) => p.id === msg.data.id)) {
           this.photos = [msg.data, ...this.photos];
         }
       } else if (msg.type === 'PHOTO_REMOVED') {
-        this.photos = this.photos.filter((p) => p.id !== msg.data?.id);
+        const removedId = msg.data?.id;
+        this.photos = this.photos.filter((p) => p.id !== removedId);
+        if (removedId != null) {
+          this.selected.delete(removedId);
+        }
       }
     });
   }
@@ -208,48 +205,72 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
     this.downloadBatch(this.photos.filter((p) => this.selected.has(p.id)));
   }
 
-  private downloadBatch(photos: any[]): void {
+  private async downloadBatch(photos: any[]): Promise<void> {
     if (photos.length === 0 || this.batchVisible) {
       return;
     }
-    if (this.resetTimer) {
-      clearTimeout(this.resetTimer);
-      this.resetTimer = undefined;
-    }
+    this.cancelBatchTimers();
     this.batchTotal = photos.length;
     this.batchDone = 0;
     this.batchComplete = false;
     this.batchVisible = true;
 
-    const run = (index: number): void => {
+    const run = async (index: number): Promise<void> => {
       if (index >= photos.length) {
         this.batchComplete = true;
         this.batchDone = photos.length;
-        this.resetTimer = setTimeout(() => {
+        this.timers.push(setTimeout(() => {
           this.batchVisible = false;
           this.batchTotal = 0;
           this.batchDone = 0;
           this.batchComplete = false;
-        }, 2200);
+        }, 2200));
         return;
       }
-      this.triggerDownload(photos[index]);
+      await this.triggerDownload(photos[index]);
       this.batchDone = index + 1;
-      setTimeout(() => run(index + 1), 350);
+      await this.delay(350);
+      await run(index + 1);
     };
-    run(0);
+    void run(0);
   }
 
-  private triggerDownload(photo: any): void {
+  private async triggerDownload(photo: any, useBlob = true): Promise<void> {
     const url = photo.fileUrl || photo.fullUrl || photo.webUrl || photo.fileName;
     if (!url) {
       return;
     }
+    const href = fileUrl(url);
+    if (useBlob) {
+      try {
+        const res = await fetch(href, { credentials: 'include' });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = downloadName(photo);
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        return;
+      } catch {
+        // fall back to a direct navigation download below
+      }
+    }
     const link = document.createElement('a');
-    link.href = fileUrl(url);
-    link.download = photo.originalName || photo.fileName;
+    link.href = href;
+    link.download = downloadName(photo);
     link.rel = 'noopener';
     link.click();
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   openLightbox(index: number): void {
@@ -258,29 +279,5 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
 
   closeLightbox(): void {
     this.lightboxIndex = -1;
-  }
-
-  stepLightbox(direction: number): void {
-    const next = this.lightboxIndex + direction;
-    if (next >= 0 && next < this.photos.length) {
-      this.lightboxIndex = next;
-    }
-  }
-
-  formatDate(date: string): string {
-    return new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  }
-
-  formatTime(time: string): string {
-    const [h, m] = time.split(':').map(Number);
-    return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, {
-      hour: 'numeric',
-      minute: '2-digit'
-    });
   }
 }

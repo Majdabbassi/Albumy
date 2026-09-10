@@ -41,11 +41,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException ex) {
-        String cause = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : "";
-        if (cause.contains("uploader_name")) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("message", "This name is already taken in this event"));
-        }
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("message", "Data conflict. Please check your input."));
     }

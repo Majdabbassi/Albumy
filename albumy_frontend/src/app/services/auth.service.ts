@@ -45,6 +45,11 @@ export class AuthService {
 
   removeToken(): void {
     localStorage.removeItem('jwt_token');
+    localStorage.removeItem('jwt_role');
+  }
+
+  saveRole(role: string): void {
+    localStorage.setItem('jwt_role', role);
   }
 
   isLoggedIn(): boolean {
@@ -53,20 +58,13 @@ export class AuthService {
 
   getUserRole(): string | null {
     const token = this.getToken();
-    if (!token) return null;
-
+    if (!token) {
+      return null;
+    }
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
-      // Spring Security JWT stores roles in authorities array with ROLE_ prefix
-      const authorities = payload.authorities || [];
-      if (authorities.length > 0) {
-        const role = authorities[0].replace('ROLE_', '');
-        return role;
-      }
-      // Fallback to role field if it exists
       return payload.role || null;
-    } catch (e) {
-      console.error('Error parsing JWT:', e);
+    } catch {
       return null;
     }
   }

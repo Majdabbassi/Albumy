@@ -11,7 +11,7 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret:albumy-secret-key-for-jwt-token-generation-must-be-long-enough-for-hs256}")
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
     @Value("${jwt.expiration:86400000}")

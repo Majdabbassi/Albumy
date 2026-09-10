@@ -24,4 +24,5 @@ public class EventDetailResponse {
     private List<PhotoResponse> photos;
     private long photoCount;
     private String coverUrl;
+    private String realtimeToken;
 }

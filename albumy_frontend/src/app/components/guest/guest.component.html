@@ -20,7 +20,7 @@
 </div>
 
 <div class="guest-page" *ngIf="eventInfo">
-  <header class="guest-hero" [style.background]="heroBackground()">
+  <header class="guest-hero" [style.background]="eventInfo.coverUrl | heroBackground">
     <div class="guest-hero-inner">
       <span class="guest-hero-badge">
         <app-icon name="sparkles" [size]="14"></app-icon>
@@ -30,11 +30,11 @@
       <div class="guest-hero-meta">
         <span class="guest-hero-chip">
           <app-icon name="calendar" [size]="15"></app-icon>
-          {{ formatDate(eventInfo.date) }}
+          {{ eventInfo.date | formatDate }}
         </span>
         <span class="guest-hero-chip">
           <app-icon name="clock" [size]="15"></app-icon>
-          {{ formatTime(eventInfo.startTime) }}
+          {{ eventInfo.startTime | formatTime }}
         </span>
       </div>
       <p class="guest-hero-sub">Every photo from every guest — all in one place. Add yours in seconds.</p>
@@ -106,7 +106,7 @@
     <!-- Step 2: upload + own uploads -->
     <section *ngIf="showUploadSection" class="stack">
       <div class="welcome-card">
-        <div class="avatar">{{ currentUser ? '' : initials(uploaderName) }}</div>
+        <div class="avatar">{{ currentUser ? '' : (uploaderName | initials) }}</div>
         <div class="welcome-copy">
           <p class="welcome-title">Welcome, <strong>{{ uploaderName }}</strong>!</p>
           <p class="muted">{{ autoUpload ? 'Select photos or videos and they upload automatically.' : 'Add photos or videos — you decide when they send.' }}</p>
@@ -240,9 +240,9 @@
         <div *ngIf="!photosLoading && photos.length > 0" class="media-grid">
           <div class="media-card" *ngFor="let photo of photos; let i = index">
             <div class="media-thumb" (click)="openLightbox(i)">
-              <video *ngIf="isVideo(photo)" [src]="photoSrc(photo, 'thumb')" muted playsinline preload="metadata"></video>
-              <img *ngIf="!isVideo(photo)" [src]="photoSrc(photo, 'thumb')" [alt]="photo.fileName" loading="lazy">
-              <span *ngIf="isVideo(photo)" class="play-badge"><span>
+              <video *ngIf="photo | isVideo" [src]="photo | mediaUrl:'thumb'" muted playsinline preload="metadata"></video>
+              <img *ngIf="!(photo | isVideo)" [src]="photo | mediaUrl:'thumb'" [alt]="photo.fileName" loading="lazy">
+              <span *ngIf="photo | isVideo" class="play-badge"><span>
                 <app-icon name="video" [size]="18"></app-icon>
               </span></span>
             </div>
@@ -263,6 +263,13 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <div *ngIf="guestHasMore" class="text-center mt-3">
+          <button (click)="loadMoreGuestPhotos()" class="btn btn-outline" [disabled]="guestLoadingMore">
+            <span class="spinner" *ngIf="guestLoadingMore"></span>
+            {{ guestLoadingMore ? 'Loading…' : 'Load more uploads' }}
+          </button>
         </div>
       </div>
     </section>
@@ -288,28 +295,17 @@
 </div>
 
 <!-- Remove photo confirmation -->
-<div *ngIf="pendingDelete" class="preview-overlay" (click)="cancelDeletePhoto()">
-  <div class="preview-panel delete-panel" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-label="Remove photo">
-    <div class="delete-thumb">
-      <img *ngIf="photoSrc(pendingDelete, 'thumb')" [src]="photoSrc(pendingDelete, 'thumb')" [alt]="pendingDelete.originalName || pendingDelete.fileName">
-      <div *ngIf="!photoSrc(pendingDelete, 'thumb')" class="delete-thumb-fallback">
-        <app-icon name="trash" [size]="26"></app-icon>
-      </div>
-    </div>
-    <h3 class="delete-title">Remove this photo?</h3>
-    <p class="delete-sub">
-      "{{ pendingDelete.originalName || pendingDelete.fileName }}" will be deleted from this album for everyone. This can't be undone.
-    </p>
-    <div class="delete-actions">
-      <button type="button" class="btn btn-ghost" (click)="cancelDeletePhoto()" [disabled]="deleteSubmitting">Cancel</button>
-      <button type="button" class="btn btn-danger" (click)="confirmDeletePhoto()" [disabled]="deleteSubmitting">
-        <span *ngIf="deleteSubmitting" class="spinner spinner-sm"></span>
-        <app-icon *ngIf="!deleteSubmitting" name="trash" [size]="15"></app-icon>
-        <span>{{ deleteSubmitting ? 'Removing…' : 'Remove photo' }}</span>
-      </button>
-    </div>
-  </div>
-</div>
+<app-confirm-modal
+  *ngIf="pendingDelete"
+  [busy]="deleteSubmitting"
+  [thumbUrl]="pendingDelete | mediaUrl:'thumb'"
+  title="Remove this photo?"
+  [message]="'&quot;' + (pendingDelete.originalName || pendingDelete.fileName) + '&quot; will be deleted from this album for everyone. This can’t be undone.'"
+  confirmLabel="Remove photo"
+  busyLabel="Removing…"
+  (confirm)="confirmDeletePhoto()"
+  (cancel)="cancelDeletePhoto()"
+></app-confirm-modal>
 
 <!-- Lightbox -->
 <app-lightbox

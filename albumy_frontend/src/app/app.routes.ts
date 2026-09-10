@@ -1,17 +1,35 @@
 import { Routes } from '@angular/router';
-import { RegisterComponent } from './components/register/register.component';
-import { LoginComponent } from './components/login/login.component';
-import { DashboardComponent } from './components/dashboard/dashboard.component';
-import { EventDetailComponent } from './components/event-detail/event-detail.component';
-import { GuestComponent } from './components/guest/guest.component';
-import { FullAlbumComponent } from './components/full-album/full-album.component';
 
 export const routes: Routes = [
-  { path: 'register', component: RegisterComponent },
-  { path: 'login', component: LoginComponent },
-  { path: 'dashboard', component: DashboardComponent },
-  { path: 'dashboard/events/:id', component: EventDetailComponent },
-  { path: 'e/:code', component: GuestComponent },
-  { path: 'e/:code/full/:token', component: FullAlbumComponent },
+  {
+    path: 'register',
+    loadComponent: () =>
+      import('./components/register/register.component').then((m) => m.RegisterComponent)
+  },
+  {
+    path: 'login',
+    loadComponent: () =>
+      import('./components/login/login.component').then((m) => m.LoginComponent)
+  },
+  {
+    path: 'dashboard',
+    loadComponent: () =>
+      import('./components/dashboard/dashboard.component').then((m) => m.DashboardComponent)
+  },
+  {
+    path: 'dashboard/events/:id',
+    loadComponent: () =>
+      import('./components/event-detail/event-detail.component').then((m) => m.EventDetailComponent)
+  },
+  {
+    path: 'e/:code',
+    loadComponent: () =>
+      import('./components/guest/guest.component').then((m) => m.GuestComponent)
+  },
+  {
+    path: 'e/:code/full/:token',
+    loadComponent: () =>
+      import('./components/full-album/full-album.component').then((m) => m.FullAlbumComponent)
+  },
   { path: '', redirectTo: '/login', pathMatch: 'full' }
 ];

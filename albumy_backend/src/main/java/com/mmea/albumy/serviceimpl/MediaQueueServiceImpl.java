@@ -18,7 +18,8 @@ public class MediaQueueServiceImpl implements MediaQueueService {
     }
 
     @Override
-    public void enqueue(Long photoId) {
-        redisTemplate.opsForList().leftPush(queueKey, String.valueOf(photoId));
+    public void enqueue(Long photoId, String mimeType) {
+        boolean video = mimeType != null && mimeType.startsWith("video/");
+        redisTemplate.opsForList().leftPush(video ? queueKey + ":video" : queueKey, String.valueOf(photoId));
     }
 }

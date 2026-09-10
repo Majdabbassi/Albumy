@@ -90,7 +90,7 @@ How the pieces talk:
 ```
 albumy/
 ├── docker-compose.yml            # full stack: mysql, redis, backend, worker, frontend, phpmyadmin
-├── .env.example                  # template for .env (all values optional)
+├── .env.example                  # template for .env (JWT_SECRET required, rest optional)
 ├── albumy_backend/               # Spring Boot application (web + worker in one jar)
 │   ├── Dockerfile                # Maven build → JRE 21 runtime (ffmpeg/curl, non-root user)
 │   └── src/main/
@@ -129,7 +129,9 @@ Prerequisite: **Docker Desktop** (or Docker Engine + Compose). That's all — Ja
 
 ```bash
 git clone <your-repo-url> && cd albumy
-cp .env.example .env        # optional: tweak passwords/secrets
+cp .env.example .env
+# generate a JWT signing key and put it in .env (see .env.example):
+openssl rand -hex 32
 docker compose up -d --build
 ```
 
@@ -139,9 +141,9 @@ First build compiles the backend (Maven in Docker, includes the worker) and the 
 |---|---|---|
 | Frontend | http://localhost:8081 | the app |
 | Backend API | http://localhost:8080 | `/api/...` proxied by Nginx |
-| phpMyAdmin | http://localhost:8082 | MySQL UI (user `albumy`, password from `.env`) |
-| Redis | localhost:6379 | internal (jobs + pub/sub + upload sessions) |
-| MySQL | localhost:3306 | internal unless used |
+| phpMyAdmin | http://localhost:8082 | MySQL UI (loopback-only; user `albumy`, password from `.env`) |
+| Redis | localhost:6379 | internal (loopback-only + password-protected) |
+| MySQL | localhost:3306 | internal (loopback-only) |
 
 Demo data is created on first boot: an admin, an organizer, one `Demo Wedding` event with 7 photos, and a pending invite link.
 
@@ -156,10 +158,12 @@ Wipe everything including data volumes: `docker compose down -v`.
 
 # 2) Backend on :8080 (plus Redis at localhost:6379)
 cd albumy_backend
+set JWT_SECRET=<paste-your-generated-secret>   # Windows  (export JWT_SECRET=... on Linux/macOS)
 mvnw.cmd spring-boot:run        # Windows        (./mvnw spring-boot:run on Linux/macOS)
 
 # 3) Media worker (optional; without it photos stay PROCESSING)
 #    Run a second instance with the worker profile, or docker compose up -d worker
+set JWT_SECRET=<same-secret-as-above>
 SPRING_PROFILES_ACTIVE=worker mvnw.cmd spring-boot:run
 
 # 4) Frontend on :4200 (proxies /api and /ws to :8080 automatically)
@@ -177,12 +181,13 @@ Copy `.env.example` to `.env`. Every variable has a sensible default. Docker exp
 | `MYSQL_ROOT_PASSWORD` | compose (MySQL) | `albumy_root` |
 | `MYSQL_DATABASE` | compose (MySQL) | `albumy` |
 | `MYSQL_USER` / `MYSQL_PASSWORD` | MySQL + backend datasource + phpMyAdmin | `albumy` / `albumy` |
-| `JWT_SECRET` | backend JWT signing key | dev-only value — **change in production** |
+| `REDIS_PASSWORD` | Redis broker (requirepass) | `albumy_redis` (loopback-only port) |
+| `JWT_SECRET` | backend JWT signing key | **required** — generate with `openssl rand -hex 32`; the app refuses to boot with the placeholder (this repo is public) |
 | `FRONTEND_URL` | backend (invite registration links) | `http://localhost:8081` |
 | `CORS_ALLOWED_ORIGINS` | backend CORS (comma-separated) | web origins + `https://localhost`, `capacitor://localhost` |
 | `UPLOAD_DIR` | backend file storage | `uploads` (inside container: `/app/uploads` volume) |
 
-Backend-only settings live in `albumy_backend/src/main/resources/application.properties`: JWT expiration (`86400000` ms), invite validity (`7` days), chunk size (`5 MB`), max assembled file (`2 GB`), upload-session TTL (`24 h`), Redis keys (`media:jobs`, `albumy:events`), worker threads (`media.jobs.threads=2`), image tiers (`320,960,1920`). No env var is required — every value has a working default.
+Backend-only settings live in `albumy_backend/src/main/resources/application.properties`: JWT expiration (`86400000` ms), invite validity (`7` days), chunk size (`5 MB`), max assembled file (`2 GB`), upload-session TTL (`24 h`), Redis keys (`media:jobs`, `albumy:events`), worker threads (`media.jobs.threads=2`), image tiers (`320,960,1920`). Every value has a working default **except `JWT_SECRET`**, which is enforced at startup.
 
 ## Demo accounts (fictional)
 
@@ -284,7 +289,13 @@ Event responses include `coverUrl` (`/files/...`, null until a cover is set), wh
 - Guests only read their own uploads (guarded by `X-Guest-Token`); delete/ZIP operations check ownership (owner or ADMIN)
 - Minimal public surface: only auth, invite validation, guest/full-album routes, upload/chunk endpoints, `/files`, `/ws` and health are unauthenticated; everything else requires a JWT with the right role
 - Backend runs as a non-root user inside the container
-- `JWT_SECRET` and DB passwords must be changed in any non-demo deployment
+- `JWT_SECRET` is **required** and enforced at startup: the backend refuses to boot with a missing, short, or publicly-known placeholder key (the repo is public). Set it via `.env` — `openssl rand -hex 32`
+- Redis, MySQL and phpMyAdmin are published **loopback-only** (`127.0.0.1`), and Redis additionally requires a password — nothing DB/broker-side is reachable from the LAN; only the app ports (`:8080`, `:8081`) are open for phone testing
+- Public endpoints are rate-limited (sliding window, `app.rate-limit.*` in `application.properties`): login/register, event-code probing (`/events/code/*`), name-available, claim, and upload init/complete. Login is keyed both per client IP and per username, so a distributed brute force can't hammer one account
+- STOMP `/ws` subscriptions are **authenticated**: subscribing to `/topic/events/{id}/…` requires either the organizer's/admin's JWT, or a short-lived, HMAC-signed **realtime ticket** that is returned only with the event's guest info or full-album response. An anonymous socket can no longer stream a photo feed just by guessing the numeric event id
+- Registration: passwords must be 8–64 chars with at least one letter and one number, and the invite is burned via an atomic conditional update **after** the account saves — concurrent registrations can't double-use an invite, and a failed save never consumes it
+- **JWT is stored in `localStorage`** (deliberate: the Capacitor app needs the bearer token across native HTTP requests, and HttpOnly cookies can't be set cross-origin for it). The realistic theft vector—stored SVG/HTML that runs in the app—is closed: only safe image/video types are accepted (`MediaFileTypes`), `/files` serves with `nosniff` + `Content-Security-Policy: sandbox`, and Angular's interpolation never renders raw HTML
+- DB passwords and demo accounts are dev-only — change them in any non-demo deployment
 
 ## Storage & performance
 

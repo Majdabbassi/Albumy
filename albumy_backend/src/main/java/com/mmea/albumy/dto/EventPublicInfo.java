@@ -16,4 +16,5 @@ public class EventPublicInfo {
     private LocalDate date;
     private LocalTime startTime;
     private String coverUrl;
+    private String realtimeToken;
 }

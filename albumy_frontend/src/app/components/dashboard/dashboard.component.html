@@ -208,14 +208,14 @@
 
           <div class="event-card-body">
             <div class="event-title-row">
-              <div class="avatar">{{ initials(event.name) }}</div>
+              <div class="avatar">{{ event.name | initials }}</div>
               <div style="min-width: 0;">
                 <h3 class="event-name">{{ event.name }}</h3>
                 <p class="event-meta">
                   <app-icon name="calendar" [size]="13"></app-icon>
-                  {{ formatDate(event.date) }} ·
+                  {{ event.date | formatDate }} ·
                   <app-icon name="clock" [size]="13"></app-icon>
-                  {{ formatTime(event.startTime) }}
+                  {{ event.startTime | formatTime }}
                 </p>
               </div>
             </div>
@@ -297,3 +297,13 @@
     </form>
   </div>
 </div>
+
+<!-- Delete event confirmation -->
+<app-confirm-modal
+  *ngIf="pendingDeleteEventId"
+  title="Delete event?"
+  message="This event and all its photos will be permanently deleted. This can’t be undone."
+  confirmLabel="Delete event"
+  (confirm)="confirmDeleteEvent()"
+  (cancel)="cancelDeleteEvent()"
+></app-confirm-modal>

@@ -1,8 +1,28 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
-import { get, set } from 'idb-keyval';
 import { EventService } from './event.service';
+
+let idbPromise: Promise<typeof import('idb-keyval')> | null = null;
+
+function idb(): Promise<typeof import('idb-keyval')> {
+  if (!idbPromise) {
+    idbPromise = import('idb-keyval');
+  }
+  return idbPromise;
+}
+
+function get<T>(key: string): Promise<T | undefined> {
+  return idb().then((mod) => mod.get<unknown>(key).then((value) => value as T | undefined));
+}
+
+function set(key: string, value: unknown): Promise<void> {
+  return idb().then((mod) => mod.set(key, value));
+}
+
+function del(key: string): Promise<void> {
+  return idb().then((mod) => mod.del(key));
+}
 
 export type QueueStatus = 'queued' | 'uploading' | 'done' | 'failed';
 
@@ -27,6 +47,9 @@ const STORE_KEY = 'albumy-upload-queue';
 const AUTO_UPLOAD_KEY = 'albumy-auto-upload';
 const CONCURRENCY = 3;
 const CHUNK = 5 * 1024 * 1024;
+// Blob content is stored once, keyed by item id, so progress updates only rewrite the
+// small metadata list (storing the whole multi-GB Blob on every chunk would thrash IndexedDB).
+const fileKey = (id: string) => `albumy-upload-file:${id}`;
 
 @Injectable({
   providedIn: 'root'
@@ -38,6 +61,8 @@ export class UploadQueueService {
 
   activeCount = 0;
   private inFlight = new Set<string>();
+  private cancelled = new Set<string>();
+  private paused = false;
 
   constructor(private eventService: EventService) {}
 
@@ -46,13 +71,32 @@ export class UploadQueueService {
       get<QueueItem[]>(STORE_KEY),
       get<boolean>(AUTO_UPLOAD_KEY)
     ]);
-    const items = stored || [];
-    for (const item of items) {
+    const items: QueueItem[] = [];
+    for (const raw of stored || []) {
+      const item = raw as QueueItem;
+      if (item.status === 'done') {
+        void del(fileKey(item.id));
+        continue;
+      }
       if (item.status === 'uploading') {
         item.status = 'queued';
-        item.uploadId = undefined;
-        item.progress = 0;
       }
+      if (item.file instanceof Blob) {
+        // Legacy rows stored the blob inline; migrate it to the keyed blob store.
+        void set(fileKey(item.id), item.file);
+      } else {
+        const blob = await this.loadFile(item.id);
+        if (!blob) {
+          console.warn('Dropping queued upload whose local copy is gone', item.id);
+          void del(fileKey(item.id));
+          continue;
+        }
+        item.file = blob;
+      }
+      items.push(item);
+    }
+    if ((stored || []).length !== items.length || stored?.some((s) => s.file instanceof Blob)) {
+      this.flushPersist();
     }
     this.autoUpload$.next(autoUpload !== false);
     this.items$.next(items);
@@ -61,13 +105,13 @@ export class UploadQueueService {
     window.addEventListener('online', () => {
       this.pauseActive();
       this.online$.next(true);
-      this.persist();
+      this.flushPersist();
       this.kick();
     });
     window.addEventListener('offline', () => {
       this.pauseActive();
       this.online$.next(false);
-      this.persist();
+      this.flushPersist();
     });
 
     this.kick();
@@ -77,11 +121,12 @@ export class UploadQueueService {
    *  (resuming on reload) and must be sent manually with uploadNow/uploadAll. */
   setAutoUpload(enabled: boolean): void {
     this.autoUpload$.next(enabled);
+    this.paused = !enabled;
     if (!enabled) {
       this.pauseActive();
     }
     void set(AUTO_UPLOAD_KEY, enabled);
-    this.persist();
+    this.flushPersist();
     this.kick();
   }
 
@@ -93,14 +138,12 @@ export class UploadQueueService {
     }
     if (target.status !== 'uploading') {
       target.status = 'queued';
-      target.progress = 0;
-      target.uploadId = undefined;
       target.error = undefined;
     }
     this.items$.next([...items]);
-    this.persist();
+    this.flushPersist();
     if (this.online$.getValue()) {
-      void this.processItem(target);
+      void this.processItem(target, true);
     }
   }
 
@@ -110,15 +153,13 @@ export class UploadQueueService {
     for (const i of items) {
       if (i.status !== 'done' && !this.inFlight.has(i.id)) {
         i.status = 'queued';
-        i.progress = 0;
-        i.uploadId = undefined;
         i.error = undefined;
         changed = true;
       }
     }
     if (changed) {
       this.items$.next([...items]);
-      this.persist();
+      this.flushPersist();
     }
     this.kick(true);
   }
@@ -128,11 +169,12 @@ export class UploadQueueService {
       return;
     }
     const items = this.items$.getValue();
+    const added: QueueItem[] = [];
     for (const f of files) {
       if (f.blob.size === 0) {
         continue;
       }
-      items.push({
+      added.push({
         id: crypto.randomUUID(),
         eventCode,
         guestToken,
@@ -146,8 +188,12 @@ export class UploadQueueService {
         createdAt: Date.now()
       });
     }
+    items.push(...added);
     this.items$.next([...items]);
-    this.persist();
+    for (const item of added) {
+      void set(fileKey(item.id), item.file);
+    }
+    this.flushPersist();
     this.kick();
   }
 
@@ -163,21 +209,17 @@ export class UploadQueueService {
     target.error = undefined;
     target.uploadId = undefined;
     this.items$.next([...items]);
-    this.persist();
-    this.kick();
+    this.flushPersist();
+    this.kick(true);
   }
 
   remove(id: string): void {
     this.inFlight.delete(id);
+    this.cancelled.add(id);
+    void del(fileKey(id));
     const items = this.items$.getValue().filter((i) => i.id !== id);
     this.items$.next([...items]);
-    this.persist();
-  }
-
-  clearDone(): void {
-    const items = this.items$.getValue().filter((i) => i.status !== 'done');
-    this.items$.next([...items]);
-    this.persist();
+    this.flushPersist();
   }
 
   private kick(force = false): void {
@@ -193,31 +235,48 @@ export class UploadQueueService {
         return;
       }
       if (item.status === 'queued' && !this.inFlight.has(item.id)) {
-        void this.processItem(item);
+        void this.processItem(item, force);
       }
     }
   }
 
-  private async processItem(item: QueueItem): Promise<void> {
+  private async processItem(item: QueueItem, force = false): Promise<void> {
     this.inFlight.add(item.id);
     this.activeCount++;
-    this.update(item, { status: 'uploading', progress: 0, error: undefined });
+    this.update(item, { status: 'uploading', error: undefined });
 
     const totalChunks = Math.max(1, Math.ceil(item.size / CHUNK));
 
     try {
-      const res = await this.withRetry(item, () =>
-        this.eventService
-          .initChunkedUpload(item.eventCode, item.guestToken, item.fileName, item.mimeType, item.size, totalChunks)
-          .toPromise()
-      );
-      const uploadId = res.uploadId as string;
-      this.update(item, { uploadId });
+      let uploadId = item.uploadId as string | undefined;
+      if (!uploadId) {
+        const res = await this.withRetry(item, () =>
+          this.eventService
+            .initChunkedUpload(item.eventCode, item.guestToken, item.fileName, item.mimeType, item.size, totalChunks)
+            .toPromise()
+        );
+        uploadId = res.uploadId as string;
+        this.update(item, { uploadId });
+      }
 
-      const received = new Set<number>((await this.eventService.getReceivedChunks(uploadId).toPromise()) || []);
+      let received = new Set<number>();
+      try {
+        received = new Set<number>((await this.eventService.getReceivedChunks(uploadId).toPromise()) || []);
+      } catch {
+        const res = await this.withRetry(item, () =>
+          this.eventService
+            .initChunkedUpload(item.eventCode, item.guestToken, item.fileName, item.mimeType, item.size, totalChunks)
+            .toPromise()
+        );
+        uploadId = res.uploadId as string;
+        this.update(item, { uploadId });
+      }
 
       for (let index = 0; index < totalChunks; index++) {
-        if (!this.online$.getValue()) {
+        if (this.cancelled.has(item.id)) {
+          return;
+        }
+        if ((!force && this.paused) || !this.online$.getValue()) {
           this.detach(item);
           return;
         }
@@ -231,11 +290,18 @@ export class UploadQueueService {
         this.update(item, { progress: Math.round(((index + 1) / totalChunks) * 100) });
       }
 
+      if (this.cancelled.has(item.id)) {
+        return;
+      }
       const photo = await this.withRetry(item, () => this.eventService.completeChunkedUpload(uploadId).toPromise());
       this.update(item, { status: 'done', progress: 100, result: photo });
       setTimeout(() => this.remove(item.id), 5000);
     } catch (err) {
-      this.update(item, { status: 'failed', error: this.readError(err), uploadId: undefined });
+      if (this.isNetworkError(err)) {
+        this.detach(item);
+      } else {
+        this.update(item, { status: 'failed', error: this.readError(err) });
+      }
     } finally {
       this.inFlight.delete(item.id);
       this.activeCount--;
@@ -259,11 +325,8 @@ export class UploadQueueService {
   }
 
   private detach(item: QueueItem): void {
-    this.update(item, { status: 'queued', uploadId: undefined, progress: 0 });
+    this.update(item, { status: 'queued' });
     this.inFlight.delete(item.id);
-    if (this.activeCount > 0) {
-      this.activeCount--;
-    }
   }
 
   private pauseActive(): void {
@@ -272,8 +335,6 @@ export class UploadQueueService {
     for (const i of items) {
       if (i.status === 'uploading') {
         i.status = 'queued';
-        i.uploadId = undefined;
-        i.progress = 0;
         changed = true;
       }
     }
@@ -293,12 +354,55 @@ export class UploadQueueService {
     this.persist();
   }
 
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+
   private persist(): void {
-    void set(STORE_KEY, this.items$.getValue());
+    if (this.persistTimer) {
+      return;
+    }
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.flushPersist();
+    }, 500);
+  }
+
+  private flushPersist(): void {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    // Metadata only — Blob content lives under fileKey(id), written once at enqueue.
+    void set(STORE_KEY, this.items$.getValue().map((item) => this.stripBlob(item)));
+  }
+
+  private stripBlob(item: QueueItem): Partial<QueueItem> {
+    const meta: any = { ...item };
+    delete meta.file;
+    return meta;
+  }
+
+  private async loadFile(id: string): Promise<Blob | undefined> {
+    try {
+      return await get<Blob>(fileKey(id));
+    } catch {
+      return undefined;
+    }
   }
 
   private readError(err: any): string {
     return err?.error?.message || err?.message || 'Upload failed';
+  }
+
+  private isNetworkError(err: any): boolean {
+    if (!navigator.onLine) {
+      return true;
+    }
+    const name = err?.name || '';
+    const msg = (err?.message || '').toString().toLowerCase();
+    return name === 'TypeError'
+      || msg.includes('network')
+      || msg.includes('fetch')
+      || msg.includes('load failed');
   }
 
   private delay(ms: number): Promise<void> {

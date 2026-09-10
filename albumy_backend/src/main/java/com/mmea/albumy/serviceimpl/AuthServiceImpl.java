@@ -15,6 +15,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AuthServiceImpl implements AuthService {
@@ -52,12 +53,11 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public LoginResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw ApiException.conflict("Username already exists");
         }
-
-        inviteService.consume(request.getInviteToken());
 
         User user = new User();
         user.setUsername(request.getUsername());
@@ -66,6 +66,11 @@ public class AuthServiceImpl implements AuthService {
         user.setDisplayName(request.getDisplayName());
         user.setRole(User.Role.ORGANIZER);
         userRepository.save(user);
+
+        // Burn the invite only after the user saved successfully: a failed save
+        // (e.g. duplicate username) rolls the whole transaction back, including
+        // the consume, so the invite is never burnt on a failed registration.
+        inviteService.consume(request.getInviteToken());
 
         // Auto-login after registration
         Authentication authentication = authenticationManager.authenticate(

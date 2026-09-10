@@ -16,15 +16,15 @@
 
     <div class="lightbox-stage" (touchstart)="onTouchStart($event)" (touchend)="onTouchEnd($event)">
       <video
-        *ngIf="isVideo(photos[index])"
-        [src]="photoSrc(photos[index])"
+        *ngIf="photos[index] | isVideo"
+        [src]="photos[index] | mediaUrl"
         controls
         autoplay
         playsinline
       ></video>
       <img
-        *ngIf="!isVideo(photos[index])"
-        [src]="photoSrc(photos[index], 'full')"
+        *ngIf="!(photos[index] | isVideo)"
+        [src]="photos[index] | mediaUrl:'full'"
         [alt]="photos[index]?.fileName || 'Event photo'"
       >
     </div>

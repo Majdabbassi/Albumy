@@ -8,9 +8,13 @@ import { EventService } from '../../services/event.service';
 import { RealtimeService, RealtimeMessage } from '../../services/realtime.service';
 import { IconComponent } from '../../shared/icon/icon.component';
 import { LightboxComponent } from '../../shared/lightbox/lightbox.component';
+import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
 import { QRCodeComponent } from 'angularx-qrcode';
-import { fileUrl } from '../../config/api.config';
 import { TimeAgoPipe } from '../../shared/pipes/time-ago.pipe';
+import { FormatDatePipe } from '../../shared/pipes/format-date.pipe';
+import { FormatTimePipe } from '../../shared/pipes/format-time.pipe';
+import { MediaUrlPipe } from '../../shared/pipes/media-url.pipe';
+import { IsVideoPipe } from '../../shared/pipes/is-video.pipe';
 
 interface Activity {
   message: string;
@@ -20,7 +24,7 @@ interface Activity {
 @Component({
   selector: 'app-event-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, IconComponent, QRCodeComponent, LightboxComponent, TimeAgoPipe],
+  imports: [CommonModule, FormsModule, RouterModule, IconComponent, QRCodeComponent, LightboxComponent, ConfirmModalComponent, TimeAgoPipe, FormatDatePipe, FormatTimePipe, MediaUrlPipe, IsVideoPipe],
   templateUrl: './event-detail.component.html',
   styleUrls: ['./event-detail.component.css']
 })
@@ -42,6 +46,8 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   hasMore = false;
   loadingMore = false;
   initialLimit = 60;
+  pendingDeletePhotoId = 0;
+  pendingDeleteEvent = false;
 
   private realtimeSub?: Subscription;
 
@@ -68,22 +74,9 @@ export class EventDetailComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.realtimeSub?.unsubscribe();
-  }
-
-  photoSrc(photo: any, variant?: 'thumb' | 'med' | 'full'): string {
-    if (photo.video || /\.(mp4|mov|webm|m4v|3gp)$/i.test(photo.fileName || photo.fileUrl || '')) {
-      return fileUrl(variant === 'thumb' ? photo.posterUrl || photo.webUrl || photo.fileUrl : photo.webUrl || photo.fileUrl);
+    if (this.eventId) {
+      this.realtime.offEvent(this.eventId);
     }
-    const url =
-      variant === 'thumb' ? photo.thumbUrl :
-      variant === 'med' ? photo.medUrl :
-      variant === 'full' ? photo.fullUrl :
-      photo.fileUrl;
-    return fileUrl(url || photo.fileUrl);
-  }
-
-  isVideo(photo: any): boolean {
-    return photo.video === true || /\.(mp4|mov|webm|m4v|3gp)$/i.test(photo.fileName || photo.fileUrl || '');
   }
 
   loadEvent(): void {
@@ -100,7 +93,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
         this.photos = data.photos || [];
         this.fullAlbumUrl = `${window.location.origin}/e/${data.eventCode}/full/${data.fullAlbumToken}`;
         this.guestUrl = `${window.location.origin}/e/${data.eventCode}`;
-        this.hasMore = (data.photos?.length || 0) === this.initialLimit;
+        this.hasMore = (data.photoCount || 0) > this.photos.length;
         this.loading = false;
         this.photosLoading = false;
         this.watchRealtime();
@@ -127,7 +120,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
         const existing = new Set(this.photos.map((p) => p.id));
         const fresh = (data.photos || []).filter((p: any) => !existing.has(p.id));
         this.photos = [...this.photos, ...fresh];
-        this.hasMore = (data.photos?.length || 0) === this.initialLimit;
+        this.hasMore = (data.photoCount || 0) > this.photos.length;
         this.loadingMore = false;
       },
       error: () => {
@@ -138,7 +131,9 @@ export class EventDetailComponent implements OnInit, OnDestroy {
 
   private watchRealtime(): void {
     this.realtime.connect();
-    this.realtimeSub = this.realtime.onEvent(this.eventId).subscribe((msg) => {
+    this.realtimeSub = this.realtime.onEvent(this.eventId, {
+      Authorization: `Bearer ${this.authService.getToken()}`
+    }).subscribe((msg) => {
       this.live = true;
       this.handleRealtime(msg);
     });
@@ -160,6 +155,9 @@ export class EventDetailComponent implements OnInit, OnDestroy {
     }
     if (msg.type === 'PHOTO_REMOVED') {
       this.photos = this.photos.filter((p) => p.id !== msg.data?.id);
+      if (this.event && msg.data?.id) {
+        this.event.photoCount = Math.max(0, (this.event.photoCount || 0) - 1);
+      }
       this.pushActivity('A photo was removed');
       return;
     }
@@ -175,9 +173,9 @@ export class EventDetailComponent implements OnInit, OnDestroy {
       this.photos = [...this.photos];
     } else {
       this.photos = [photo, ...this.photos];
-    }
-    if (this.event) {
-      this.event.photoCount = this.photos.length;
+      if (this.event) {
+        this.event.photoCount = (this.event.photoCount || 0) + 1;
+      }
     }
   }
 
@@ -189,7 +187,12 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   }
 
   deletePhoto(photoId: number): void {
-    if (!confirm('Are you sure you want to delete this photo?')) {
+    this.pendingDeletePhotoId = photoId;
+  }
+
+  confirmDeletePhoto(): void {
+    const photoId = this.pendingDeletePhotoId;
+    if (!photoId) {
       return;
     }
 
@@ -200,21 +203,29 @@ export class EventDetailComponent implements OnInit, OnDestroy {
       next: () => {
         this.photos = this.photos.filter((p) => p.id !== photoId);
         if (this.event) {
-          this.event.photoCount = this.photos.length;
+          this.event.photoCount = Math.max(0, (this.event.photoCount || 0) - 1);
         }
+        this.pendingDeletePhotoId = 0;
         this.successMessage = 'Photo deleted.';
         this.autoDismiss();
       },
       error: () => {
+        this.pendingDeletePhotoId = 0;
         this.errorMessage = 'Failed to delete photo';
       }
     });
   }
 
+  cancelDeletePhoto(): void {
+    this.pendingDeletePhotoId = 0;
+  }
+
   deleteEvent(): void {
-    if (!confirm('Are you sure you want to delete this event? All photos will be permanently deleted.')) {
-      return;
-    }
+    this.pendingDeleteEvent = true;
+  }
+
+  confirmDeleteEvent(): void {
+    this.pendingDeleteEvent = false;
 
     const token = this.authService.getToken();
     if (!token) return;
@@ -227,6 +238,10 @@ export class EventDetailComponent implements OnInit, OnDestroy {
         this.errorMessage = 'Failed to delete event';
       }
     });
+  }
+
+  cancelDeleteEvent(): void {
+    this.pendingDeleteEvent = false;
   }
 
   downloadAllPhotos(): void {
@@ -358,30 +373,6 @@ export class EventDetailComponent implements OnInit, OnDestroy {
 
   closeLightbox(): void {
     this.lightboxIndex = -1;
-  }
-
-  stepLightbox(direction: number): void {
-    const next = this.lightboxIndex + direction;
-    if (next >= 0 && next < this.photos.length) {
-      this.lightboxIndex = next;
-    }
-  }
-
-  formatDate(date: string): string {
-    return new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  }
-
-  formatTime(time: string): string {
-    const [h, m] = time.split(':').map(Number);
-    return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, {
-      hour: 'numeric',
-      minute: '2-digit'
-    });
   }
 
   private safeName(name: string): string {

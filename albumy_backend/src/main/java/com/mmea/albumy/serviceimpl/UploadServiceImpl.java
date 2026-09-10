@@ -14,10 +14,16 @@ import com.mmea.albumy.repository.PhotoRepository;
 import com.mmea.albumy.service.MediaQueueService;
 import com.mmea.albumy.service.RealtimeEventsService;
 import com.mmea.albumy.service.UploadService;
+import com.mmea.albumy.util.MediaFileTypes;
+import com.mmea.albumy.util.PhotoFiles;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -30,13 +36,17 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 
 @Service
+@EnableScheduling
 public class UploadServiceImpl implements UploadService {
 
     private static final Logger log = LoggerFactory.getLogger(UploadServiceImpl.class);
@@ -51,6 +61,7 @@ public class UploadServiceImpl implements UploadService {
     private final int chunkSize;
     private final long maxFile;
     private final Duration sessionTtl;
+    private final Map<String, Object> uploadLocks = new ConcurrentHashMap<>();
 
     public UploadServiceImpl(StringRedisTemplate redis,
                              EventRepository eventRepository,
@@ -91,6 +102,12 @@ public class UploadServiceImpl implements UploadService {
         if (request.getFileName() == null || request.getFileName().isBlank() || request.getFileName().length() > 255) {
             throw ApiException.badRequest("A file name is required");
         }
+        if (request.getSize() <= 0 || request.getSize() > maxFile) {
+            throw ApiException.badRequest("Invalid file size");
+        }
+        if (MediaFileTypes.storedExtension(request.getFileName()).isEmpty()) {
+            throw ApiException.badRequest("Unsupported file type. Only images and videos are allowed.");
+        }
 
         String uploadId = UUID.randomUUID().toString();
         redis.opsForHash().putAll("upload:" + uploadId, Map.of(
@@ -130,6 +147,13 @@ public class UploadServiceImpl implements UploadService {
 
     @Override
     public PhotoResponse complete(String uploadId) {
+        Object lock = uploadLocks.computeIfAbsent(uploadId, k -> new Object());
+        synchronized (lock) {
+            return doComplete(uploadId);
+        }
+    }
+
+    private PhotoResponse doComplete(String uploadId) {
         Map<Object, Object> session = session(uploadId);
         String eventCode = (String) session.get("eventCode");
         String guestToken = (String) session.get("guestToken");
@@ -147,13 +171,43 @@ public class UploadServiceImpl implements UploadService {
             throw ApiException.badRequest("Not all chunks have been uploaded yet");
         }
 
+        String extension = MediaFileTypes.storedExtension(fileName);
+        if (extension.isEmpty()) {
+            cleanup(uploadId);
+            throw ApiException.badRequest("Unsupported file type. Only images and videos are allowed.");
+        }
+
         String sha256;
         Path assembled;
         try {
             assembled = assemble(uploadId, totalChunks);
+            long assembledSize = safeSize(assembled);
+            if (assembledSize > maxFile) {
+                cleanup(uploadId);
+                throw ApiException.badRequest("File exceeds the maximum upload size");
+            }
+            if (session.get("size") != null && !((String) session.get("size")).isBlank()) {
+                long declaredSize;
+                try {
+                    declaredSize = Long.parseLong((String) session.get("size"));
+                } catch (NumberFormatException e) {
+                    cleanup(uploadId);
+                    throw ApiException.badRequest("Invalid declared size");
+                }
+                if (declaredSize != assembledSize) {
+                    cleanup(uploadId);
+                    throw ApiException.badRequest("Uploaded size does not match the declared size");
+                }
+            }
             sha256 = sha256Of(assembled);
         } catch (IOException e) {
             throw new RuntimeException("Failed to assemble upload", e);
+        }
+
+        String sniffed = MediaFileTypes.sniffExtension(assembled);
+        if (sniffed == null || !MediaFileTypes.isCompatible(sniffed, extension)) {
+            cleanup(uploadId);
+            throw ApiException.badRequest("File content does not match its extension");
         }
 
         Photo existing = photoRepository.findFirstByEventAndSha256(event, sha256).orElse(null);
@@ -162,8 +216,7 @@ public class UploadServiceImpl implements UploadService {
             return PhotoResponse.from(existing);
         }
 
-        String extension = extensionOf(fileName);
-        String storedName = UUID.randomUUID() + (extension.isEmpty() ? "" : "." + extension);
+        String storedName = UUID.randomUUID() + "." + extension;
 
         try {
             Path target = Paths.get(uploadDir, storedName).toAbsolutePath();
@@ -173,19 +226,34 @@ public class UploadServiceImpl implements UploadService {
             throw new RuntimeException("Failed to store assembled file", e);
         }
 
+        String resolvedMime = (mimeType == null || mimeType.isEmpty() || MediaFileTypes.isBlockedMime(mimeType))
+                ? guessMime(storedName)
+                : mimeType;
+
         Photo photo = new Photo();
         photo.setEvent(event);
         photo.setGuest(guest);
         photo.setFileName(storedName);
         photo.setOriginalName(fileName);
-        photo.setMimeType(mimeType == null || mimeType.isEmpty() ? guessMime(storedName) : mimeType);
+        photo.setMimeType(resolvedMime);
         photo.setSize(Files.exists(Paths.get(uploadDir, storedName))
                 ? safeSize(Paths.get(uploadDir, storedName)) : 0L);
         photo.setSha256(sha256);
         photo.setStatus(PhotoStatus.PROCESSING);
-        Photo saved = photoRepository.save(photo);
+        Photo saved;
+        try {
+            saved = photoRepository.saveAndFlush(photo);
+        } catch (DataIntegrityViolationException e) {
+            PhotoFiles.deleteFileIfExists(uploadDir, storedName);
+            existing = photoRepository.findFirstByEventAndSha256(event, sha256).orElse(null);
+            cleanup(uploadId);
+            if (existing != null) {
+                return PhotoResponse.from(existing);
+            }
+            throw e;
+        }
 
-        mediaQueueService.enqueue(saved.getId());
+        mediaQueueService.enqueue(saved.getId(), resolvedMime);
         realtimeEventsService.photoAdded(saved);
         cleanup(uploadId);
         log.info("Chunked upload complete: photo {} ({}) in event {}", saved.getId(), storedName, eventCode);
@@ -249,28 +317,9 @@ public class UploadServiceImpl implements UploadService {
         }
     }
 
-    private String extensionOf(String fileName) {
-        int dot = fileName.lastIndexOf('.');
-        if (dot < 0 || dot == fileName.length() - 1) {
-            return "";
-        }
-        String ext = fileName.substring(dot + 1).toLowerCase();
-        return ext.matches("[a-z0-9]{1,8}") ? ext : "";
-    }
-
     private String guessMime(String fileName) {
-        String ext = extensionOf(fileName);
-        return switch (ext) {
-            case "png" -> "image/png";
-            case "gif" -> "image/gif";
-            case "webp" -> "image/webp";
-            case "heic", "heif" -> "image/heic";
-            case "mp4", "m4v" -> "video/mp4";
-            case "mov" -> "video/quicktime";
-            case "webm" -> "video/webm";
-            case "jpg", "jpeg" -> "image/jpeg";
-            default -> "application/octet-stream";
-        };
+        String mime = MediaFileTypes.mimeFor(fileName);
+        return mime != null ? mime : "application/octet-stream";
     }
 
     private long safeSize(Path path) {
@@ -301,5 +350,45 @@ public class UploadServiceImpl implements UploadService {
         }
         redis.delete("upload:" + uploadId);
         redis.delete("upload:" + uploadId + ":chunks");
+    }
+
+    /**
+     * Periodic sweep that reclaims on-disk chunk/tmp files for upload sessions
+     * that expired or were abandoned (paused/offline) past the session TTL.
+     */
+    @Scheduled(fixedDelay = 3_600_000, initialDelay = 120_000)
+    public void sweepStaleTmp() {
+        Path tmp = Paths.get(uploadDir, "tmp").toAbsolutePath();
+        if (!Files.isDirectory(tmp)) {
+            return;
+        }
+        long ttlMillis = sessionTtl.toMillis();
+        try (Stream<Path> entries = Files.list(tmp)) {
+            entries.forEach(entry -> {
+                long ageMillis;
+                try {
+                    ageMillis = System.currentTimeMillis() - Files.getLastModifiedTime(entry).toMillis();
+                } catch (IOException e) {
+                    return;
+                }
+                if (ageMillis >= ttlMillis) {
+                    deleteRecursively(entry);
+                }
+            });
+        } catch (IOException e) {
+            log.warn("Failed to sweep upload tmp directory", e);
+        }
+    }
+
+    private void deleteRecursively(Path dir) {
+        try (Stream<Path> paths = Files.walk(dir)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException ignored) {
+                }
+            });
+        } catch (IOException ignored) {
+        }
     }
 }

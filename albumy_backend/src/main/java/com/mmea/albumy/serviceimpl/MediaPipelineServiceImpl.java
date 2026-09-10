@@ -1,7 +1,10 @@
 package com.mmea.albumy.serviceimpl;
 
 import com.drew.imaging.ImageMetadataReader;
+import com.drew.metadata.Directory;
 import com.drew.metadata.Metadata;
+import com.drew.metadata.Tag;
+import com.drew.metadata.MetadataException;
 import com.drew.metadata.exif.ExifIFD0Directory;
 import com.drew.metadata.exif.ExifSubIFDDirectory;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -32,6 +35,11 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 public class MediaPipelineServiceImpl implements MediaPipelineService {
+
+    // Above this decoded-pixel count, ImageIO.read() + the resize copy would allocate two
+    // full-size buffers (~180 MB each at 45 MP per worker thread). Route those through the
+    // ffmpeg decode path, which scales progressively instead of buffering the original.
+    private static final long FFMPEG_DECODE_PIXELS = 25_000_000L;
 
     private final String uploadDir;
     private final List<Integer> imageSizes;
@@ -81,21 +89,44 @@ public class MediaPipelineServiceImpl implements MediaPipelineService {
             photo.setCaptureDate(readCaptureDate(metadata));
         }
 
-        BufferedImage image = ImageIO.read(original.toFile());
-        if (image == null) {
-            image = decodeImageWithFfmpeg(original);
-        }
-        if (image == null) {
-            throw new IOException("Unsupported or corrupt image format");
-        }
-
         int orientation = metadata != null ? readOrientation(metadata) : 1;
-        if (orientation > 1) {
-            image = applyOrientation(image, orientation);
+
+        int[] dims = readDimensions(metadata);
+        boolean huge = dims != null && (long) dims[0] * dims[1] > FFMPEG_DECODE_PIXELS;
+
+        BufferedImage image;
+        if (huge) {
+            // ffmpeg decodes with progressive scaling and applies EXIF rotation, so we
+            // never buffer the full 45 MP original plus a second resize copy in the heap.
+            Path scaled = scaleImageWithFfmpeg(original, imageSizes.get(imageSizes.size() - 1));
+            try {
+                image = ImageIO.read(scaled.toFile());
+            } finally {
+                Files.deleteIfExists(scaled);
+            }
+            if (image == null) {
+                throw new IOException("Unsupported or corrupt image format");
+            }
+            orientation = 1;
+        } else {
+            image = ImageIO.read(original.toFile());
+            if (image == null) {
+                image = decodeImageWithFfmpeg(original);
+            }
+            if (image == null) {
+                throw new IOException("Unsupported or corrupt image format");
+            }
+            if (orientation > 1) {
+                image = applyOrientation(image, orientation);
+            }
         }
         photo.setWidth(image.getWidth());
         photo.setHeight(image.getHeight());
 
+        writeVariants(photo, image);
+    }
+
+    private void writeVariants(Photo photo, BufferedImage image) throws Exception {
         String base = baseName(photo.getFileName());
         int lastSize = -1;
         String lastVariant = null;
@@ -247,6 +278,37 @@ public class MediaPipelineServiceImpl implements MediaPipelineService {
         }
     }
 
+    /** Cheap dimension probe (metadata only, no full decode) used to pick the decode route. */
+    private int[] readDimensions(Metadata metadata) {
+        if (metadata == null) {
+            return null;
+        }
+        for (Directory dir : metadata.getDirectories()) {
+            Integer widthTag = null;
+            Integer heightTag = null;
+            for (Tag tag : dir.getTags()) {
+                String name = tag.getTagName();
+                if ("Image Width".equals(name)) {
+                    widthTag = tag.getTagType();
+                } else if ("Image Height".equals(name)) {
+                    heightTag = tag.getTagType();
+                }
+            }
+            if (widthTag == null || heightTag == null) {
+                continue;
+            }
+            try {
+                int w = dir.getInt(widthTag);
+                int h = dir.getInt(heightTag);
+                if (w > 0 && h > 0) {
+                    return new int[]{w, h};
+                }
+            } catch (MetadataException ignored) {
+            }
+        }
+        return null;
+    }
+
     private BufferedImage applyOrientation(BufferedImage src, int orientation) {
         int width = src.getWidth();
         int height = src.getHeight();
@@ -297,6 +359,23 @@ public class MediaPipelineServiceImpl implements MediaPipelineService {
         } finally {
             Files.deleteIfExists(tmp);
         }
+    }
+
+    private Path scaleImageWithFfmpeg(Path original, int maxWidth) throws IOException {
+        Path tmp = original.resolveSibling(original.getFileName() + ".scaled.png");
+        List<String> cmd = List.of(
+                ffmpegPath, "-y", "-i", original.toString(),
+                "-frames:v", "1", "-an",
+                "-vf", "scale='min(" + maxWidth + ",iw)':-2",
+                tmp.toString()
+        );
+        try {
+            run(cmd, 900);
+        } catch (IOException e) {
+            Files.deleteIfExists(tmp);
+            throw e;
+        }
+        return tmp;
     }
 
     private BufferedImage resizeKeepingAspect(BufferedImage src, int maxWidth) {

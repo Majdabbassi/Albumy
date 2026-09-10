@@ -54,11 +54,11 @@
       <div class="row mt-1" style="row-gap: 6px;">
         <span class="badge badge-gray">
           <app-icon name="calendar" [size]="13"></app-icon>
-          {{ formatDate(event.date) }}
+          {{ event.date | formatDate }}
         </span>
         <span class="badge badge-gray">
           <app-icon name="clock" [size]="13"></app-icon>
-          {{ formatTime(event.startTime) }}
+          {{ event.startTime | formatTime }}
         </span>
         <span class="badge badge-amber">
           <app-icon name="photo" [size]="13"></app-icon>
@@ -195,9 +195,9 @@
     <div *ngIf="!photosLoading && photos.length > 0" class="media-grid">
       <div class="media-card" *ngFor="let photo of photos; let i = index">
         <div class="media-thumb" (click)="openLightbox(i)">
-          <video *ngIf="isVideo(photo)" [src]="photoSrc(photo, 'thumb')" muted playsinline preload="metadata"></video>
-          <img *ngIf="!isVideo(photo)" [src]="photoSrc(photo, 'thumb')" [alt]="photo.fileName" loading="lazy">
-          <span *ngIf="isVideo(photo)" class="play-badge"><span>
+          <video *ngIf="photo | isVideo" [src]="photo | mediaUrl:'thumb'" muted playsinline preload="metadata"></video>
+          <img *ngIf="!(photo | isVideo)" [src]="photo | mediaUrl:'thumb'" [alt]="photo.fileName" loading="lazy">
+          <span *ngIf="photo | isVideo" class="play-badge"><span>
             <app-icon name="video" [size]="18"></app-icon>
           </span></span>
         </div>
@@ -207,7 +207,7 @@
             <p class="media-sub">{{ photo.uploadedAt | timeAgo }}</p>
           </div>
           <div class="media-actions">
-            <a [href]="photoSrc(photo, 'full')" target="_blank" rel="noopener" class="icon-btn" title="Open full size"
+            <a [href]="photo | mediaUrl:'full'" target="_blank" rel="noopener" class="icon-btn" title="Open full size"
               [attr.aria-label]="'Open ' + photo.fileName">
               <app-icon name="link" [size]="15"></app-icon>
             </a>
@@ -236,3 +236,23 @@
   [(index)]="lightboxIndex"
   (close)="closeLightbox()"
 ></app-lightbox>
+
+<!-- Delete photo confirmation -->
+<app-confirm-modal
+  *ngIf="pendingDeletePhotoId"
+  title="Delete photo?"
+  message="This photo will be permanently deleted from the event."
+  confirmLabel="Delete photo"
+  (confirm)="confirmDeletePhoto()"
+  (cancel)="cancelDeletePhoto()"
+></app-confirm-modal>
+
+<!-- Delete event confirmation -->
+<app-confirm-modal
+  *ngIf="pendingDeleteEvent"
+  title="Delete event?"
+  message="This event and all its photos will be permanently deleted. This can’t be undone."
+  confirmLabel="Delete event"
+  (confirm)="confirmDeleteEvent()"
+  (cancel)="cancelDeleteEvent()"
+></app-confirm-modal>

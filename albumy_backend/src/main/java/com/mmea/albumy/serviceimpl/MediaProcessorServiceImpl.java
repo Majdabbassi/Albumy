@@ -9,7 +9,8 @@ import com.mmea.albumy.service.RealtimeEventsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class MediaProcessorServiceImpl {
@@ -22,18 +23,22 @@ public class MediaProcessorServiceImpl {
     private final MediaPipelineService mediaPipeline;
     private final MediaQueueService mediaQueueService;
     private final RealtimeEventsService realtimeEventsService;
+    private final TransactionTemplate txTemplate;
 
     public MediaProcessorServiceImpl(PhotoRepository photoRepository,
                                      MediaPipelineService mediaPipeline,
                                      MediaQueueService mediaQueueService,
-                                     RealtimeEventsService realtimeEventsService) {
+                                     RealtimeEventsService realtimeEventsService,
+                                     PlatformTransactionManager txManager) {
         this.photoRepository = photoRepository;
         this.mediaPipeline = mediaPipeline;
         this.mediaQueueService = mediaQueueService;
         this.realtimeEventsService = realtimeEventsService;
+        // The old @Transactional span pinned a DB connection for the whole ffmpeg/ImageIO
+        // run; the template scopes a transaction to just the DB updates + realtime publish.
+        this.txTemplate = new TransactionTemplate(txManager);
     }
 
-    @Transactional
     public void process(Long photoId) {
         Photo photo = photoRepository.findById(photoId).orElse(null);
         if (photo == null || photo.getStatus() == PhotoStatus.READY) {
@@ -41,22 +46,35 @@ public class MediaProcessorServiceImpl {
         }
         try {
             mediaPipeline.process(photo);
-            photo.setStatus(PhotoStatus.READY);
-            photo.setErrorCount(0);
-            realtimeEventsService.photoReady(photo);
-            log.info("Media ready: photo {} ({})", photo.getId(), photo.getFileName());
         } catch (Exception e) {
-            int errors = photo.getErrorCount() == null ? 1 : photo.getErrorCount() + 1;
-            photo.setErrorCount(errors);
-            if (errors >= MAX_ATTEMPTS) {
-                photo.setStatus(PhotoStatus.ERROR);
-                log.warn("Media processing failed permanently for photo {}: {}", photo.getId(), e.getMessage());
-            } else {
-                photo.setStatus(PhotoStatus.PROCESSING);
-                mediaQueueService.enqueue(photoId);
-                log.warn("Media processing failed for photo {} (attempt {}): {}", photo.getId(), errors, e.getMessage());
-            }
+            markFailed(photo, e);
+            return;
         }
-        photoRepository.save(photo);
+        photo.setStatus(PhotoStatus.READY);
+        photo.setErrorCount(0);
+        txTemplate.executeWithoutResult(s -> {
+            photoRepository.save(photo);
+            realtimeEventsService.photoReady(photo);
+        });
+        log.info("Media ready: photo {} ({})", photo.getId(), photo.getFileName());
+    }
+
+    private void markFailed(Photo photo, Exception e) {
+        int errors = photo.getErrorCount() == null ? 1 : photo.getErrorCount() + 1;
+        photo.setErrorCount(errors);
+        if (errors >= MAX_ATTEMPTS) {
+            txTemplate.executeWithoutResult(s -> {
+                photo.setStatus(PhotoStatus.ERROR);
+                photoRepository.save(photo);
+            });
+            log.warn("Media processing failed permanently for photo {}: {}", photo.getId(), e.getMessage());
+        } else {
+            txTemplate.executeWithoutResult(s -> {
+                photo.setStatus(PhotoStatus.PROCESSING);
+                photoRepository.save(photo);
+            });
+            mediaQueueService.enqueue(photo.getId(), photo.getMimeType());
+            log.warn("Media processing failed for photo {} (attempt {}): {}", photo.getId(), errors, e.getMessage());
+        }
     }
 }

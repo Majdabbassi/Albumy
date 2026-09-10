@@ -11,6 +11,7 @@ import com.mmea.albumy.repository.GuestRepository;
 import com.mmea.albumy.repository.InviteRepository;
 import com.mmea.albumy.repository.PhotoRepository;
 import com.mmea.albumy.repository.UserRepository;
+import com.mmea.albumy.util.RandomUtil;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
@@ -23,11 +24,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import javax.imageio.ImageIO;
@@ -35,9 +36,6 @@ import javax.imageio.ImageIO;
 @Component
 @Profile("!worker")
 public class DataInitializer implements CommandLineRunner {
-
-    private static final String CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private static final String ADMIN_USERNAME = "demo_admin";
     private static final String ADMIN_PASSWORD = "demo_admin_password";
@@ -125,11 +123,8 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedDemoEvent(User organizer) {
-        boolean eventExists = eventRepository.findByName(DEMO_EVENT_NAME).isPresent();
-        Event event = eventExists ? eventRepository.findByName(DEMO_EVENT_NAME).get() : newEvent(organizer);
-        if (!eventExists) {
-            eventRepository.save(event);
-        }
+        Optional<Event> existing = eventRepository.findByName(DEMO_EVENT_NAME);
+        Event event = existing.orElseGet(() -> eventRepository.save(newEvent(organizer)));
         if (photoRepository.countByEvent(event) > 0) {
             return;
         }
@@ -182,7 +177,7 @@ public class DataInitializer implements CommandLineRunner {
 
         String eventCode;
         do {
-            eventCode = generateRandomCode(6);
+            eventCode = RandomUtil.generateRandomCode(6);
         } while (eventRepository.existsByEventCode(eventCode));
         event.setEventCode(eventCode);
 
@@ -218,14 +213,6 @@ public class DataInitializer implements CommandLineRunner {
         } catch (IOException e) {
             throw new RuntimeException("Failed to seed demo photo", e);
         }
-    }
-
-    private String generateRandomCode(int length) {
-        StringBuilder code = new StringBuilder();
-        for (int i = 0; i < length; i++) {
-            code.append(CODE_CHARS.charAt(SECURE_RANDOM.nextInt(CODE_CHARS.length())));
-        }
-        return code.toString();
     }
 
     private void logCredentials() {

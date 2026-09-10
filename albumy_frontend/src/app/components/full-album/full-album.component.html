@@ -19,7 +19,7 @@
   </div>
 
   <div *ngIf="event">
-    <header class="album-hero" [style.background]="heroBackground()">
+    <header class="album-hero" [style.background]="event.coverUrl | heroBackground">
       <div class="album-hero-inner">
         <span class="album-hero-badge">
           <app-icon name="photo" [size]="14"></app-icon>
@@ -29,11 +29,11 @@
         <div class="album-hero-meta">
           <span class="album-hero-chip">
             <app-icon name="calendar" [size]="15"></app-icon>
-            {{ formatDate(event.date) }}
+            {{ event.date | formatDate }}
           </span>
           <span class="album-hero-chip">
             <app-icon name="clock" [size]="15"></app-icon>
-            {{ formatTime(event.startTime) }}
+            {{ event.startTime | formatTime }}
           </span>
           <span class="album-hero-chip">
             <app-icon name="camera" [size]="15"></app-icon>
@@ -96,9 +96,9 @@
       <div *ngIf="!photosLoading && photos.length > 0" class="media-grid">
         <div class="media-card" *ngFor="let photo of photos; let i = index" [class.selected]="selectMode && isSelected(photo)">
           <div class="media-thumb" (click)="onMediaClick(photo, i)">
-            <video *ngIf="isVideo(photo)" [src]="photoSrc(photo, 'thumb')" muted playsinline preload="metadata"></video>
-            <img *ngIf="!isVideo(photo)" [src]="photoSrc(photo, 'thumb')" [alt]="photo.fileName" loading="lazy">
-            <span *ngIf="isVideo(photo)" class="play-badge"><span>
+            <video *ngIf="photo | isVideo" [src]="photo | mediaUrl:'thumb'" muted playsinline preload="metadata"></video>
+            <img *ngIf="!(photo | isVideo)" [src]="photo | mediaUrl:'thumb'" [alt]="photo.fileName" loading="lazy">
+            <span *ngIf="photo | isVideo" class="play-badge"><span>
               <app-icon name="video" [size]="18"></app-icon>
             </span></span>
             <span *ngIf="selectMode" class="select-badge" [class.checked]="isSelected(photo)">

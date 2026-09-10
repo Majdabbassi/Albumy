@@ -1,5 +1,7 @@
 services:
   # ---------------------------------------------------------------- MySQL
+  # Management/db ports (mysql, redis, phpmyadmin) are loopback-only; the app
+  # surface (backend :8080, frontend :8081) stays on 0.0.0.0 for LAN/phone testing.
   mysql:
     image: mysql:8.4
     container_name: albumy-mysql
@@ -10,7 +12,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-albumy}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-albumy}
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -25,13 +27,18 @@ services:
     image: redis:7-alpine
     container_name: albumy-redis
     restart: unless-stopped
+    # Loopback-only: no plaintext Redis on the LAN. App containers reach it over the
+    # internal compose network; the dev-default password stops anything that can still
+    # connect from enqueuing fake media jobs or deleting upload sessions.
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-albumy_redis}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-albumy_redis}
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -52,7 +59,8 @@ services:
       DB_USER: ${MYSQL_USER:-albumy}
       DB_PASSWORD: ${MYSQL_PASSWORD:-albumy}
       REDIS_HOST: redis
-      JWT_SECRET: ${JWT_SECRET:-albumy-dev-only-secret-change-me-in-production}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-albumy_redis}
+      JWT_SECRET: ${JWT_SECRET:?Set_JWT_SECRET_in_your_.env_file_(see_.env.example)}
       UPLOAD_DIR: /app/uploads
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8081}
     ports:
@@ -81,8 +89,10 @@ services:
       DB_USER: ${MYSQL_USER:-albumy}
       DB_PASSWORD: ${MYSQL_PASSWORD:-albumy}
       REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-albumy_redis}
       UPLOAD_DIR: /app/uploads
       SPRING_PROFILES_ACTIVE: worker
+      MEDIA_JOBS_THREADS: ${MEDIA_JOBS_THREADS:-2}
       JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
     volumes:
       - albumy_uploads:/app/uploads
@@ -113,7 +123,7 @@ services:
       PMA_PASSWORD: ${MYSQL_PASSWORD:-albumy}
       UPLOAD_LIMIT: 100M
     ports:
-      - "8082:80"
+      - "127.0.0.1:8082:80"
 
 volumes:
   mysql-data:

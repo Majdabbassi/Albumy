@@ -34,6 +34,7 @@ export class LoginComponent {
     this.authService.login(this.username, this.password).subscribe({
       next: (response) => {
         this.authService.saveToken(response.token);
+        this.authService.saveRole(response.role);
         this.router.navigate(['/dashboard']);
       },
       error: (err) => {

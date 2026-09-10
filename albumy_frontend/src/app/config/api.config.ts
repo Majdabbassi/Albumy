@@ -22,15 +22,20 @@ export function resolveApiUrl(): string {
   return `${window.location.origin}/api`;
 }
 
-/** Prefixes a backend-relative path (e.g. `/files/uuid.png`) with the API base. */
+/** Prefixes a backend-relative path (e.g. `/files/uuid.png`) with the API base.
+ *  Non-http(s) absolute URLs (javascript:, data:, ...) are rejected outright. */
 export function fileUrl(path: string): string {
   if (!path) {
     return '';
   }
-  if (/^https?:\/\//.test(path)) {
-    return path;
+  const value = path.trim();
+  if (/^https?:\/\//i.test(value)) {
+    return value;
   }
-  return `${resolveApiUrl()}${path}`;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+    return '';
+  }
+  return `${resolveApiUrl()}${value}`;
 }
 
 /**
@@ -43,12 +48,4 @@ export function resolveWsUrl(): string {
     return api.replace(/^http/, 'ws').replace(/\/api$/, '') + '/ws';
   }
   return `${window.location.origin.replace(/^http/, 'ws')}/ws`;
-}
-
-export function setApiUrlOverride(url: string): void {
-  localStorage.setItem(STORAGE_KEY, url.replace(/\/+$/, ''));
-}
-
-export function clearApiUrlOverride(): void {
-  localStorage.removeItem(STORAGE_KEY);
 }

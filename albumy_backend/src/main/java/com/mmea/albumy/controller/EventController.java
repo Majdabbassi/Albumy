@@ -4,6 +4,7 @@ import com.mmea.albumy.dto.CreateEventRequest;
 import com.mmea.albumy.dto.EventDetailResponse;
 import com.mmea.albumy.dto.EventResponse;
 import com.mmea.albumy.service.EventService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -64,14 +65,12 @@ public class EventController {
     }
 
     @GetMapping("/{id}/photos/zip")
-    public ResponseEntity<org.springframework.core.io.Resource> downloadEventPhotosAsZip(
-            @PathVariable Long id,
-            @AuthenticationPrincipal UserDetails userDetails) throws IOException {
-        org.springframework.core.io.Resource resource = eventService.downloadEventPhotosAsZip(id, userDetails);
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"event-" + id + "-photos.zip\"")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .body(resource);
+    public void downloadEventPhotosAsZip(@PathVariable Long id,
+                                         @AuthenticationPrincipal UserDetails userDetails,
+                                         HttpServletResponse response) throws IOException {
+        response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"event-" + id + "-photos.zip\"");
+        eventService.writeEventPhotosAsZip(id, userDetails, response.getOutputStream());
     }
 
     @DeleteMapping("/photos/{photoId}")

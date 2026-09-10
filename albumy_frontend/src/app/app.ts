@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { DeepLinkService } from './services/deep-link.service';
 
@@ -9,8 +9,6 @@ import { DeepLinkService } from './services/deep-link.service';
   styleUrl: './app.css'
 })
 export class App implements OnInit {
-  protected readonly title = signal('albumy_frontend');
-
   private deepLink = inject(DeepLinkService);
 
   ngOnInit(): void {

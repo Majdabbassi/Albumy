@@ -116,8 +116,9 @@ export class IconComponent {
   constructor(private sanitizer: DomSanitizer) {}
 
   get paths(): SafeHtml {
-    return this.sanitizer.bypassSecurityTrustHtml(
-      ICON_PATHS[this.name] ?? ICON_PATHS.camera
-    );
+    if (Object.prototype.hasOwnProperty.call(ICON_PATHS, this.name)) {
+      return this.sanitizer.bypassSecurityTrustHtml(ICON_PATHS[this.name]);
+    }
+    return this.sanitizer.bypassSecurityTrustHtml(ICON_PATHS.camera);
   }
 }

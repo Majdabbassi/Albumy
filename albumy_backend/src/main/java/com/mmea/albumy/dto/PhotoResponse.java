@@ -54,4 +54,30 @@ public class PhotoResponse {
                 photo.getUploadedAt()
         );
     }
+
+    /** Compact shape used on realtime pub/sub frames, where the extra stored-name,
+     *  size, status and capture-date fields are not consumed by any UI. */
+    public static PhotoResponse slim(Photo photo) {
+        boolean video = photo.getMimeType() != null && photo.getMimeType().startsWith("video/");
+        return new PhotoResponse(
+                photo.getId(),
+                photo.getGuest().getName(),
+                photo.getOriginalName(),
+                null,
+                "/files/" + photo.getFileName(),
+                photo.getFileNameThumb() != null ? "/files/" + photo.getFileNameThumb() : null,
+                photo.getFileNameMed() != null ? "/files/" + photo.getFileNameMed() : null,
+                photo.getFileNameFull() != null ? "/files/" + photo.getFileNameFull() : null,
+                photo.getFileNamePoster() != null ? "/files/" + photo.getFileNamePoster() : null,
+                photo.getFileNameWeb() != null ? "/files/" + photo.getFileNameWeb() : null,
+                video,
+                photo.getDuration(),
+                photo.getWidth(),
+                photo.getHeight(),
+                null,
+                null,
+                null,
+                photo.getUploadedAt()
+        );
+    }
 }

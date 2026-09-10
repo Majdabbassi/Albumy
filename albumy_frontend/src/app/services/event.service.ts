@@ -85,18 +85,11 @@ export class EventService {
     return this.http.post(`${this.apiUrl}/events/code/${eventCode}/claim`, { name });
   }
 
-  uploadPhoto(eventCode: string, uploaderName: string, file: File, guestToken?: string): Observable<any> {
-    const formData = new FormData();
-    formData.append('file', file);
-    if (uploaderName) {
-      formData.append('uploaderName', uploaderName);
+  getPhotosByUploader(eventCode: string, uploaderName: string, guestToken?: string, beforeId?: number, limit = 60): Observable<any> {
+    const params: any = { limit };
+    if (beforeId) {
+      params.beforeId = beforeId;
     }
-    const headers: any = guestToken ? { 'X-Guest-Token': guestToken } : {};
-    return this.http.post(`${this.apiUrl}/events/code/${eventCode}/photos`, formData, { headers });
-  }
-
-  getPhotosByUploader(eventCode: string, uploaderName: string, guestToken?: string): Observable<any> {
-    const params: any = {};
     if (!guestToken && uploaderName) {
       params.uploaderName = uploaderName;
     }
