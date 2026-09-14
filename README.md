@@ -27,7 +27,7 @@ Albumy gives every event a dedicated, no-account guest page:
 |---|---|
 | **Guest onboarding** | No account — unique pseudo per event (server-verified), remembered in `localStorage`; guest token issued at claim, sent as `X-Guest-Token` |
 | **Robust uploads** | 5 MB chunked uploads (up to 2 GB per file), resume-from-server (only missing chunks are resent), 3× retry with backoff, IndexedDB-persisted queue that survives reloads, offline pause + auto-resume, 3 uploads in flight |
-| **Camera & size control** | Dedicated camera capture button; **Fast** mode compresses to ≤1920 px JPEG before upload, **Original** sends untouched files |
+| **Camera & size control** | Dedicated camera capture button; large photos are auto-compressed to ≤2560 px JPEG before upload when it reduces the size (GIFs and already-small images pass through untouched) |
 | **Media pipeline** | Dedicated Redis-backed worker transcodes in the background: `_thumb`/`_med`/`_full` JPEG tiers (320/960/1920), H.264 `_web.mp4` + `_poster.jpg` for video, EXIF capture-date/orientation; up to 3 attempts then marked `ERROR` |
 | **Live updates** | Uploads and transcriptions push `PHOTO_ADDED` / `PHOTO_READY` / `PHOTO_REMOVED` / `ACTIVITY` messages: Redis pub/sub → STOMP WebSocket → **instant updates** in guest list, full album, organizer gallery (live pill + activity feed) and dashboard (toast + cover refresh) |
 | **Outreach** | Per-event guest URL + QR code (downloadable PNG / printable) with Web-Share + clipboard copy, and a separate read-only **full album** link w/ deep links (`albumy://open?code=...`); visitors save any photo — single, **Download all**, or selected — at original quality, no ZIP |
@@ -77,9 +77,9 @@ Albumy gives every event a dedicated, no-account guest page:
 How the pieces talk:
 
 - **Browser → frontend**: always same-origin. `/api/...` is proxied to the backend (dev server `proxy.conf.json`; Nginx in production), `/ws` is upgraded for STOMP. Direct backend URL is `http://localhost:8080` (no `/api` prefix).
-- **Chunked upload**: `POST /uploads` creates an upload session in Redis (24 h TTL); chunks are `PUT` as raw bytes; `GET /uploads/{id}/chunks` returns what's already stored for a clean resume; `POST /uploads/{id}/complete` assembles the file, deduplicates by SHA-256, and drops a job on the Redis `media:jobs` queue.
-- **Worker**: the same jar with `SPRING_PROFILES_ACTIVE=worker` (web server off, `DataInitializer`/`WebSocketConfig`/`RealtimeBridgeConfig` excluded). It `BRPOP`s jobs and runs the media pipeline (ImageIO + metadata-extractor + ffmpeg), writing derivatives into the **same `/app/uploads` volume** so the web backend can serve them immediately.
-- **Realtime**: any new/ready/removed photo publishes JSON on the Redis channel `albumy:events`; the web backend bridges it to STOMP topic `/topic/events/{eventId}/photos` (plus `activity` and `stats`); clients subscribe per event and update UI in place.
+- **Chunked upload**: `POST /uploads` creates an upload session in Redis (24 h TTL); chunks are `PUT` as raw bytes; `GET /uploads/{id}/chunks` returns what's already stored for a clean resume; `POST /uploads/{id}/complete` assembles the file, deduplicates by SHA-256, and drops a job on the Redis `media:jobs` (image) or `media:jobs:video` (video) queue.
+- **Worker**: the same jar with `SPRING_PROFILES_ACTIVE=worker` (web server off, `DataInitializer`/`WebSocketConfig`/`RealtimeBridgeConfig` excluded). It polls both queues (images get priority over videos) and runs the media pipeline (ImageIO + metadata-extractor + ffmpeg), writing derivatives into the **same `/app/uploads` volume** so the web backend can serve them immediately.
+- **Realtime**: any new/ready/removed photo publishes JSON on the Redis channel `albumy:events`; the web backend bridges it to STOMP topics `/topic/events/{eventId}/photos` and `/topic/events/{eventId}/activity`; clients subscribe per event and update UI in place.
 - **Android app**: built with `--configuration capacitor`, base URL `http://10.0.2.2:8080/api` (emulator → host). On a physical device point `environment.capacitor.ts` at your LAN IP. Deep links (`albumy://open?code=...`) navigate straight to the event.
 - Hibernate `ddl-auto=update` creates the schema on first boot (no Flyway); `DataInitializer` seeds demo data when missing and re-seeds photos for the demo event if its gallery is empty.
 
@@ -118,7 +118,7 @@ albumy/
             ├── services/         # auth, event, upload-queue, realtime, deep-link
             ├── shared/icon/      # reusable SVG icon component
             ├── config/api.config.ts
-            └── utils/image.ts    # client-side compression (Fast uploads)
+            └── utils/image.ts    # client-side auto-compression before upload
 ```
 
 ---
@@ -187,7 +187,7 @@ Copy `.env.example` to `.env`. Every variable has a sensible default. Docker exp
 | `CORS_ALLOWED_ORIGINS` | backend CORS (comma-separated) | web origins + `https://localhost`, `capacitor://localhost` |
 | `UPLOAD_DIR` | backend file storage | `uploads` (inside container: `/app/uploads` volume) |
 
-Backend-only settings live in `albumy_backend/src/main/resources/application.properties`: JWT expiration (`86400000` ms), invite validity (`7` days), chunk size (`5 MB`), max assembled file (`2 GB`), upload-session TTL (`24 h`), Redis keys (`media:jobs`, `albumy:events`), worker threads (`media.jobs.threads=2`), image tiers (`320,960,1920`). Every value has a working default **except `JWT_SECRET`**, which is enforced at startup.
+Backend-only settings live in `albumy_backend/src/main/resources/application.properties`: JWT expiration (`86400000` ms), invite validity (`7` days), chunk size (`5 MB`), max assembled file (`2 GB`), upload-session TTL (`24 h`), Redis keys (`media:jobs`/`media:jobs:video`, `albumy:events`), worker threads (`media.jobs.threads=2`), image tiers (`320,960,1920`). Every value has a working default **except `JWT_SECRET`**, which is enforced at startup.
 
 ## Demo accounts (fictional)
 
@@ -204,7 +204,7 @@ Seeded demo data (only when absent): the `Demo Wedding` event (code **`U1Z5WJ`**
 2. **Organizer registers** — open the invite URL (`http://localhost:8081/register?invite=TOKEN`). Registration without a valid invite is rejected; the invite is single-use and expires after 7 days.
 3. **Organizer creates an event** — name, date, start time. A 6-char guest code and a full-album token are generated. Details and the cover photo can be edited later from the event page.
 4. **Guests join** — open `/e/CODE`, pick a unique pseudo (server-checked per event), get remembered automatically, and open the drop zone. No account needed.
-5. **Guest uploads** — drop files or take a photo with the camera; choose **Fast** (compressed) or **Original**. Uploads queue, chunk up, survive reloads/offline, and appear in the gallery — the organizer's page and the public album update live.
+5. **Guest uploads** — drop files or take a photo with the camera; large photos are compressed automatically when it helps. Uploads queue, chunk up, survive reloads/offline, and appear in the gallery — the organizer's page and the public album update live.
 6. **Outreach & sharing** — the organizer event page shows the guest link + QR (download PNG / print) and the public full-album link; everything can be shared via the Web Share API or copied. Visitors to the full album save any photo with one tap, or pick Select / **Download all** — each file downloads individually at its original quality (nothing is zipped on the public album).
 7. **Organizer manages the album** — event detail lists every photo with its uploader; deletes individual photos or the whole event; downloads the entire album as a ZIP. Admins can download any event's ZIP.
 
@@ -257,7 +257,6 @@ All responses are JSON with `{ "message": ... }` on error. Authenticated endpoin
 | GET | `/events/code/{eventCode}` | public | Guest event info |
 | GET | `/events/code/{eventCode}/name-available?name=X` | public | Check pseudo availability |
 | POST | `/events/code/{eventCode}/claim` | public | Claim pseudo → `guestToken` |
-| POST | `/events/code/{eventCode}/photos` | public | Legacy multipart upload (kept for compat) |
 | GET | `/events/code/{eventCode}/photos?beforeId=&limit=` | public | One pseudo's uploads (X-Guest-Token or uploaderName) |
 | POST | `/uploads` | public | **Init chunked upload** → `{ uploadId, chunkSize }` |
 | PUT | `/uploads/{uploadId}/chunks/{index}` | public | Upload one raw chunk (octet-stream) |
@@ -265,9 +264,9 @@ All responses are JSON with `{ "message": ... }` on error. Authenticated endpoin
 | POST | `/uploads/{uploadId}/complete` | public | Assemble, dedupe, enqueue media job → `PhotoResponse` |
 | GET | `/events/full/{fullAlbumToken}?beforeId=&limit=` | public | Full album (read-only, separate token) |
 | GET | `/files/{fileName}` | public | Stream an uploaded file/variant |
-| WS  | `/ws` | public | STOMP endpoint → `/topic/events/{id}/photos\|activity\|stats` |
+| WS  | `/ws` | public | STOMP endpoint → `/topic/events/{id}/photos\|activity` |
 
-`PhotoResponse` payload (used by the REST list and pushed over WebSocket): `id`, `uploaderName`, `fileName`, `fileUrl`, `thumbUrl`, `medUrl`, `fullUrl`, `posterUrl`, `webUrl`, `video`, `duration`, `width`, `height`, `size`, `status`, `captureDate`, `uploadedAt`.
+`PhotoResponse` payload (REST list): `id`, `uploaderName`, `fileName`, `fileUrl`, `thumbUrl`, `medUrl`, `fullUrl`, `posterUrl`, `webUrl`, `video`, `duration`, `width`, `height`, `size`, `status`, `captureDate`, `uploadedAt`. Real-time messages carry a slimmed subset (no `fileName`, `size`, `status`, or `captureDate`).
 
 Event responses include `coverUrl` (`/files/...`, null until a cover is set), which also drives the guest and full-album page heroes.
 
