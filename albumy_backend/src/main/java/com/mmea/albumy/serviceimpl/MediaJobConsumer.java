@@ -23,8 +23,9 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+// "embedded-worker" runs this consumer inside the web process (single-instance hosting).
 @Component
-@Profile("worker")
+@Profile({"worker", "embedded-worker"})
 @EnableScheduling
 public class MediaJobConsumer {
 
@@ -67,7 +68,7 @@ public class MediaJobConsumer {
      * Jobs that are not pulled (or that get rejected) stay in Redis, so a crash or
      * restart can never lose queued work.
      */
-    @Scheduled(fixedDelay = 250)
+    @Scheduled(fixedDelayString = "${media.jobs.poll-ms:250}")
     public void poll() {
         while (true) {
             String sourceKey = imageQueueKey;

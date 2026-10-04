@@ -1,0 +1,59 @@
+name: Deploy frontend to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "albumy_frontend/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: albumy_frontend
+    env:
+      # Set the repository variable ALBUMY_API_URL to your real Render URL if it differs.
+      API_URL: ${{ vars.ALBUMY_API_URL || 'https://albumy-api.onrender.com' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: albumy_frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Point the app at the hosted API
+        # The production environment file ships with an empty (same-origin) API URL.
+        run: |
+          sed -i "s|apiUrl: ''|apiUrl: '${API_URL}'|" src/environments/environment.prod.ts
+          grep apiUrl src/environments/environment.prod.ts
+      - name: Build (served from /Albumy/)
+        run: npm run build -- --configuration production --base-href /Albumy/
+      - name: SPA fallback (deep links such as /Albumy/e/DEMO01)
+        run: cp dist/albumy_frontend/browser/index.html dist/albumy_frontend/browser/404.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: albumy_frontend/dist/albumy_frontend/browser
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

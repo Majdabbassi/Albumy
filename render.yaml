@@ -1,0 +1,56 @@
+# Render blueprint: the Albumy API on the free plan.
+# The frontend is deployed separately to GitHub Pages (.github/workflows/pages.yml).
+#
+# One free instance runs the web API *and* the media worker (profile "embedded-worker"),
+# because Render's free tier has no background workers. Its disk is wiped whenever it
+# sleeps or redeploys, so uploads are temporary; the demo data is rebuilt on every start.
+services:
+  - type: web
+    name: albumy-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./albumy_backend/Dockerfile
+    dockerContext: ./albumy_backend
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      # --- runtime shape -------------------------------------------------
+      - key: SPRING_PROFILES_ACTIVE
+        value: embedded-worker
+      # 512 MB instance: keep the heap small so ffmpeg and the JVM overhead still fit.
+      - key: JAVA_TOOL_OPTIONS
+        value: -Xmx320m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m -Djava.awt.headless=true
+      - key: MEDIA_JOBS_THREADS
+        value: "1"
+      # Check Redis once a second instead of every 250 ms (fewer commands on a free Redis).
+      - key: MEDIA_JOBS_POLL_MS
+        value: "1000"
+      - key: UPLOAD_DIR
+        value: /tmp/uploads
+      # Disk is disposable: drop rows whose files are gone, then re-seed the demo event.
+      - key: DEMO_RECONCILE_STORAGE
+        value: "true"
+      # --- public URLs ---------------------------------------------------
+      - key: FRONTEND_URL
+        value: https://majdabbassi.github.io/Albumy
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://majdabbassi.github.io
+      # --- secrets: set these in the Render dashboard (never commit them) -
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_URL          # jdbc:mysql://HOST:PORT/DB?sslMode=REQUIRED&serverTimezone=UTC
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      # "false" for Redis Cloud's free plan (plain connection); "true" for providers that
+      # require TLS. If the API logs a Redis connection reset, try the other value.
+      - key: REDIS_SSL
+        value: "false"
