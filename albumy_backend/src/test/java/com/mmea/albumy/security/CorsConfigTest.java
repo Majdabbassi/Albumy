@@ -7,7 +7,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class CorsConfigTest {
@@ -22,8 +21,9 @@ class CorsConfigTest {
     // from another origin (the GitHub Pages demo, the Android app) failed its preflight.
     @Test
     void everyHeaderTheFrontendSendsIsAllowed() {
-        assertNotNull(config().checkHeaders(
-                List.of("Authorization", "Content-Type", "X-Guest-Token", "X-Realtime-Token")));
+        List<String> requested = List.of("Authorization", "Content-Type", "X-Guest-Token", "X-Realtime-Token");
+        // checkHeaders returns only the allowed subset, so all of them must come back.
+        assertEquals(requested, config().checkHeaders(requested));
     }
 
     @Test
