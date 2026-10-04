@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 public class MediaProcessorServiceImpl {
@@ -53,8 +55,17 @@ public class MediaProcessorServiceImpl {
         photo.setStatus(PhotoStatus.READY);
         photo.setErrorCount(0);
         txTemplate.executeWithoutResult(s -> {
-            photoRepository.save(photo);
-            realtimeEventsService.photoReady(photo);
+            // Use the managed copy: the detached one has an uninitialised lazy Guest.
+            Photo saved = photoRepository.save(photo);
+            saved.getGuest().getName();
+            // Publish only after commit, otherwise clients that re-fetch on the message
+            // can still read the old PROCESSING row.
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    realtimeEventsService.photoReady(saved);
+                }
+            });
         });
         log.info("Media ready: photo {} ({})", photo.getId(), photo.getFileName());
     }

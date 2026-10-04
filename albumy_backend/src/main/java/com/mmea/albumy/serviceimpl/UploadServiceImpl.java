@@ -213,6 +213,15 @@ public class UploadServiceImpl implements UploadService {
         Photo existing = photoRepository.findFirstByEventAndSha256(event, sha256).orElse(null);
         if (existing != null) {
             cleanup(uploadId);
+            // A duplicate of a photo whose processing never finished (worker down, retries
+            // exhausted) is a natural retry: queue it again instead of leaving it stuck.
+            if (existing.getStatus() == PhotoStatus.PROCESSING || existing.getStatus() == PhotoStatus.ERROR) {
+                existing.setStatus(PhotoStatus.PROCESSING);
+                existing.setErrorCount(0);
+                Photo requeued = photoRepository.save(existing);
+                mediaQueueService.enqueue(requeued.getId(), requeued.getMimeType());
+                return PhotoResponse.from(requeued);
+            }
             return PhotoResponse.from(existing);
         }
 

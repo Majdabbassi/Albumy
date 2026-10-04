@@ -66,6 +66,7 @@ export class GuestComponent implements OnInit, OnDestroy {
   private onlineSub?: Subscription;
   private autoUploadSub?: Subscription;
   private realtimeSub?: Subscription;
+  private reconnectSub?: Subscription;
 
   constructor(
     private route: ActivatedRoute,
@@ -113,6 +114,7 @@ export class GuestComponent implements OnInit, OnDestroy {
     this.onlineSub?.unsubscribe();
     this.autoUploadSub?.unsubscribe();
     this.realtimeSub?.unsubscribe();
+    this.reconnectSub?.unsubscribe();
     if (this.eventInfo?.id) {
       this.realtime.offEvent(this.eventInfo.id);
     }
@@ -142,6 +144,7 @@ export class GuestComponent implements OnInit, OnDestroy {
       return;
     }
     this.realtime.connect();
+    this.reconnectSub = this.realtime.reconnected$.subscribe(() => this.refreshMyPhotos());
     this.realtimeSub = this.realtime.onEvent(this.eventInfo.id, {
       'X-Realtime-Token': this.eventInfo.realtimeToken
     }).subscribe((msg) => {
@@ -408,7 +411,7 @@ export class GuestComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** True when the polled first page differs from what is already on screen (id prefix compare). */
+  /** True when the polled first page differs from what is already on screen (id/status/thumbnail compare). */
   private photosChanged(fresh: any[]): boolean {
     if (!Array.isArray(fresh) || fresh.length === 0) {
       return true;
@@ -418,7 +421,11 @@ export class GuestComponent implements OnInit, OnDestroy {
       return true;
     }
     for (let i = 0; i < n; i++) {
-      if (this.photos[i]?.id !== fresh[i]?.id) {
+      const shown = this.photos[i];
+      const next = fresh[i];
+      // Same id is not enough: a photo flips PROCESSING -> READY (and gains thumbnails)
+      // without changing id, and that is exactly the update the page has to pick up.
+      if (shown?.id !== next?.id || shown?.status !== next?.status || shown?.thumbUrl !== next?.thumbUrl) {
         return true;
       }
     }

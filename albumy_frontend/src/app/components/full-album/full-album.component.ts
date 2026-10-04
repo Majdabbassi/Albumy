@@ -41,6 +41,7 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
   batchComplete = false;
   batchVisible = false;
   private realtimeSub?: Subscription;
+  private connectionSubs: Subscription[] = [];
   private timers: any[] = [];
 
   constructor(
@@ -64,6 +65,7 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.cancelBatchTimers();
     this.realtimeSub?.unsubscribe();
+    this.connectionSubs.forEach((s) => s.unsubscribe());
     if (this.event?.id) {
       this.realtime.offEvent(this.event.id);
     }
@@ -116,17 +118,27 @@ export class FullAlbumComponent implements OnInit, OnDestroy {
   }
 
   private watchRealtime(): void {
-    if (!this.event?.id) {
-      return;
+    if (!this.event?.id || this.realtimeSub) {
+      return; // nothing to watch, or already wired (loadFullAlbum reruns after a reconnect)
     }
     this.realtime.connect();
+    this.connectionSubs = [
+      this.realtime.connected$.subscribe((connected) => (this.live = connected)),
+      this.realtime.reconnected$.subscribe(() => this.loadFullAlbum())
+    ];
     this.realtimeSub = this.realtime.onEvent(this.event.id, {
       'X-Realtime-Token': this.event.realtimeToken
     }).subscribe((msg) => {
-      this.live = true;
       if (msg.type === 'PHOTO_ADDED' || msg.type === 'PHOTO_READY') {
-        if (msg.data?.id && !this.photos.some((p) => p.id === msg.data.id)) {
+        if (!msg.data?.id) {
+          return;
+        }
+        if (!this.photos.some((p) => p.id === msg.data.id)) {
           this.photos = [msg.data, ...this.photos];
+        } else {
+          // Replace (don't mutate) so pure pipes recompute, keeping known values over nulls.
+          const fresh = Object.fromEntries(Object.entries(msg.data).filter(([, v]) => v != null));
+          this.photos = this.photos.map((p) => (p.id === msg.data.id ? { ...p, ...fresh } : p));
         }
       } else if (msg.type === 'PHOTO_REMOVED') {
         const removedId = msg.data?.id;

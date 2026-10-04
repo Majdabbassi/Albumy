@@ -47,11 +47,14 @@ public class RealtimeBridgeConfig {
         @Override
         public void onMessage(org.springframework.data.redis.connection.Message message, byte[] pattern) {
             try {
-                JsonNode root = objectMapper.readTree(message.getBody());
+                String json = new String(message.getBody(), java.nio.charset.StandardCharsets.UTF_8);
+                JsonNode root = objectMapper.readTree(json);
                 long eventId = root.path("eventId").asLong();
                 String topic = root.path("topic").asText();
                 String dest = "/topic/events/" + eventId + "/" + topic;
-                messagingTemplate.convertAndSend(dest, root);
+                // Forward the original JSON text. Sending the JsonNode itself makes Spring's
+                // message converter serialize it as a bean ({"array":false,...}), not as JSON.
+                messagingTemplate.convertAndSend(dest, json);
             } catch (Exception e) {
                 log.warn("Failed to forward realtime event: {}", e.getMessage());
             }

@@ -6,7 +6,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Data
 @NoArgsConstructor
@@ -29,7 +31,8 @@ public class PhotoResponse {
     private Long size;
     private String status;
     private LocalDate captureDate;
-    private LocalDateTime uploadedAt;
+    /** Sent as an instant (ISO-8601 with 'Z') so browsers in any timezone read it correctly. */
+    private Instant uploadedAt;
 
     public static PhotoResponse from(Photo photo) {
         boolean video = photo.getMimeType() != null && photo.getMimeType().startsWith("video/");
@@ -51,7 +54,7 @@ public class PhotoResponse {
                 photo.getSize(),
                 photo.getStatus().name(),
                 photo.getCaptureDate(),
-                photo.getUploadedAt()
+                toInstant(photo.getUploadedAt())
         );
     }
 
@@ -77,7 +80,11 @@ public class PhotoResponse {
                 null,
                 null,
                 null,
-                photo.getUploadedAt()
+                toInstant(photo.getUploadedAt())
         );
+    }
+
+    private static Instant toInstant(LocalDateTime time) {
+        return time == null ? null : time.atZone(ZoneId.systemDefault()).toInstant();
     }
 }

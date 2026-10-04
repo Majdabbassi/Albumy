@@ -42,6 +42,8 @@ public class DataInitializer implements CommandLineRunner {
     private static final String ORGANIZER_USERNAME = "demo_organizer";
     private static final String ORGANIZER_PASSWORD = "demo_organizer_password";
     private static final String DEMO_EVENT_NAME = "Demo Wedding";
+    /** Fixed so the README and demo links work on every fresh start. */
+    private static final String DEMO_EVENT_CODE = "DEMO01";
 
     private final UserRepository userRepository;
     private final InviteRepository inviteRepository;
@@ -140,10 +142,13 @@ public class DataInitializer implements CommandLineRunner {
             String guestName = upload[0];
             int count = Integer.parseInt(upload[1]);
 
-            Guest guest = new Guest();
-            guest.setEvent(event);
-            guest.setName(guestName);
-            guestRepository.save(guest);
+            // Reuse the guest if it exists: after a storage reconcile the guests outlive their photos.
+            Guest guest = guestRepository.findByEventAndName(event, guestName).orElseGet(() -> {
+                Guest created = new Guest();
+                created.setEvent(event);
+                created.setName(guestName);
+                return guestRepository.save(created);
+            });
 
             for (int i = 0; i < count; i++) {
                 String fileName = UUID.randomUUID() + ".png";
@@ -175,10 +180,10 @@ public class DataInitializer implements CommandLineRunner {
         event.setStartTime(LocalTime.of(16, 0));
         event.setOrganizer(organizer);
 
-        String eventCode;
-        do {
+        String eventCode = DEMO_EVENT_CODE;
+        while (eventRepository.existsByEventCode(eventCode)) {
             eventCode = RandomUtil.generateRandomCode(6);
-        } while (eventRepository.existsByEventCode(eventCode));
+        }
         event.setEventCode(eventCode);
 
         String fullAlbumToken;

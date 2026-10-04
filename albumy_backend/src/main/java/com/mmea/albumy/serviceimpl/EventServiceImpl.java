@@ -213,7 +213,9 @@ public class EventServiceImpl implements EventService {
                 PhotoFiles.deleteAfterCommit(() -> PhotoFiles.deletePhotoFiles(uploadDir, photo));
                 realtimeEventsService.photoRemoved(event.getId(), photo.getId());
             }
-            photoRepository.deleteAllInBatch(batch);
+            // Not deleteAllInBatch: a bulk SQL delete leaves these entities managed, and removing
+            // the Event afterwards then fails with "references an unsaved transient instance".
+            photoRepository.deleteAll(batch);
             if (!batch.isEmpty()) {
                 lastId = batch.get(batch.size() - 1).getId();
             }
@@ -339,7 +341,7 @@ public class EventServiceImpl implements EventService {
                 event.getOrganizer().getId(),
                 event.getCreatedAt(),
                 photoCount,
-                coverThumb,
+                coverThumb == null ? null : "/files/" + coverThumb,
                 FileUrls.coverUrl(event)
         );
     }

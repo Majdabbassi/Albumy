@@ -3,8 +3,11 @@ package com.mmea.albumy.security;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
@@ -12,8 +15,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.util.ContentCachingRequestWrapper;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Locale;
@@ -22,6 +25,8 @@ import java.util.Map;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class RateLimitFilter extends OncePerRequestFilter {
+
+    private static final int MAX_LOGIN_BODY = 16384;
 
     private final RateLimiter rateLimiter;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -81,15 +86,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
             Duration window = Duration.ofMinutes(windowMinutes);
 
             if (isLogin(method, path)) {
-                ContentCachingRequestWrapper wrapper = new ContentCachingRequestWrapper(request, 16384);
-                wrapper.getInputStream().readAllBytes();
+                byte[] body = request.getInputStream().readNBytes(MAX_LOGIN_BODY + 1);
+                if (body.length > MAX_LOGIN_BODY) {
+                    response.setStatus(413);
+                    return;
+                }
                 boolean ipAllowed = rateLimiter.allow("login:ip:" + ip, loginPerIp, window);
-                boolean userAllowed = !ipAllowed || userLoginAllowed(wrapper);
+                boolean userAllowed = !ipAllowed || userLoginAllowed(body);
                 if (!userAllowed) {
                     deny(response);
                     return;
                 }
-                filterChain.doFilter(wrapper, response);
+                // The body was consumed above, so hand the controller a replayable copy.
+                filterChain.doFilter(new ReplayableRequest(request, body), response);
                 return;
             }
             if (match("POST", method, path, PATH_REGISTER)
@@ -135,8 +144,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return expectedMethod.equals(method) && pathMatcher.match(pattern, path);
     }
 
-    private boolean userLoginAllowed(ContentCachingRequestWrapper wrapper) {
-        String username = extractUsername(wrapper);
+    private boolean userLoginAllowed(byte[] body) {
+        String username = extractUsername(body);
         if (username == null) {
             return true;
         }
@@ -144,8 +153,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 loginPerUsername, Duration.ofMinutes(windowMinutes));
     }
 
-    private String extractUsername(ContentCachingRequestWrapper wrapper) {
-        byte[] body = wrapper.getContentAsByteArray();
+    private String extractUsername(byte[] body) {
         if (body.length == 0) {
             return null;
         }
@@ -168,5 +176,27 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
         response.getWriter().write(objectMapper.writeValueAsString(Map.of("message", "Too many requests. Try again later.")));
+    }
+
+    /** Serves an already-read request body again so downstream code can still parse it. */
+    private static final class ReplayableRequest extends HttpServletRequestWrapper {
+        private final byte[] body;
+
+        ReplayableRequest(HttpServletRequest request, byte[] body) {
+            super(request);
+            this.body = body;
+        }
+
+        @Override
+        public ServletInputStream getInputStream() {
+            ByteArrayInputStream in = new ByteArrayInputStream(body);
+            return new ServletInputStream() {
+                @Override public boolean isFinished() { return in.available() == 0; }
+                @Override public boolean isReady() { return true; }
+                @Override public void setReadListener(ReadListener listener) { }
+                @Override public int read() { return in.read(); }
+                @Override public int read(byte[] b, int off, int len) { return in.read(b, off, len); }
+            };
+        }
     }
 }

@@ -1,5 +1,5 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { Injectable, NgZone } from '@angular/core';
+import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import { resolveWsUrl } from '../config/api.config';
 import type { Client, IMessage } from '@stomp/stompjs';
 
@@ -16,13 +16,20 @@ export interface RealtimeMessage {
 })
 export class RealtimeService {
   connected$ = new BehaviorSubject<boolean>(false);
+  /** Fires when the socket comes back after a drop, so pages can re-fetch what they missed. */
+  reconnected$ = new Subject<void>();
 
   private client: Client | null = null;
   private connecting: Promise<void> | null = null;
+  private hasConnected = false;
   private subjects = new Map<number, BehaviorSubject<RealtimeMessage>>();
   private topics = new Map<number, string[]>();
   private subscriptionHeaders = new Map<number, Record<string, string>>();
   private subscriptions = new Map<number, { unsubscribe: () => void }[]>();
+
+  // `await import()` resumes outside Angular's zone, so STOMP callbacks must be re-entered
+  // explicitly or the views never re-render after a message.
+  constructor(private zone: NgZone) {}
 
   connect(): void {
     if (this.client) {
@@ -35,26 +42,33 @@ export class RealtimeService {
 
   private async establish(): Promise<void> {
     try {
-      const { Client } = await import('@stomp/stompjs');
-      const client = new Client({
+      // The production bundle resolves stompjs to its UMD build, where the exports live
+      // under `default`; the dev build exposes them as named exports. Accept both.
+      const mod: any = await import('@stomp/stompjs');
+      const StompClient: typeof Client = mod.Client ?? mod.default?.Client;
+      const client = new StompClient({
         brokerURL: resolveWsUrl(),
         reconnectDelay: 3000,
         heartbeatIncoming: 10000,
         heartbeatOutgoing: 10000
       });
 
-      client.onConnect = () => {
+      client.onConnect = () => this.zone.run(() => {
+        if (this.hasConnected) {
+          this.reconnected$.next();
+        }
+        this.hasConnected = true;
         this.connected$.next(true);
         for (const eventId of this.subjects.keys()) {
           this.wire(eventId);
         }
-      };
-      client.onWebSocketClose = () => {
+      });
+      client.onWebSocketClose = () => this.zone.run(() => {
         this.connected$.next(false);
-      };
-      client.onStompError = () => {
+      });
+      client.onStompError = () => this.zone.run(() => {
         this.connected$.next(false);
-      };
+      });
 
       client.activate();
       this.client = client;
@@ -118,6 +132,8 @@ export class RealtimeService {
       }
     }
     this.client = null;
+    this.hasConnected = false;
+    this.connected$.next(false);
     this.subscriptions.clear();
   }
 
@@ -139,7 +155,7 @@ export class RealtimeService {
           try {
             const payload = JSON.parse(message.body) as RealtimeMessage;
             const subject = this.subjects.get(eventId);
-            subject?.next(payload);
+            this.zone.run(() => subject?.next(payload));
           } catch {
             // ignore malformed frames
           }

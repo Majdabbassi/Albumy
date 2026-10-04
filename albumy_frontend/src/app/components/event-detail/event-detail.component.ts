@@ -7,6 +7,7 @@ import { AuthService } from '../../services/auth.service';
 import { EventService } from '../../services/event.service';
 import { RealtimeService, RealtimeMessage } from '../../services/realtime.service';
 import { IconComponent } from '../../shared/icon/icon.component';
+import { appUrl } from '../../config/api.config';
 import { LightboxComponent } from '../../shared/lightbox/lightbox.component';
 import { ConfirmModalComponent } from '../../shared/confirm-modal/confirm-modal.component';
 import { QRCodeComponent } from 'angularx-qrcode';
@@ -50,6 +51,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   pendingDeleteEvent = false;
 
   private realtimeSub?: Subscription;
+  private connectionSubs: Subscription[] = [];
 
   constructor(
     private route: ActivatedRoute,
@@ -74,6 +76,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.realtimeSub?.unsubscribe();
+    this.connectionSubs.forEach((s) => s.unsubscribe());
     if (this.eventId) {
       this.realtime.offEvent(this.eventId);
     }
@@ -91,8 +94,8 @@ export class EventDetailComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.event = data;
         this.photos = data.photos || [];
-        this.fullAlbumUrl = `${window.location.origin}/e/${data.eventCode}/full/${data.fullAlbumToken}`;
-        this.guestUrl = `${window.location.origin}/e/${data.eventCode}`;
+        this.fullAlbumUrl = appUrl(`e/${data.eventCode}/full/${data.fullAlbumToken}`);
+        this.guestUrl = appUrl(`e/${data.eventCode}`);
         this.hasMore = (data.photoCount || 0) > this.photos.length;
         this.loading = false;
         this.photosLoading = false;
@@ -130,11 +133,18 @@ export class EventDetailComponent implements OnInit, OnDestroy {
   }
 
   private watchRealtime(): void {
+    if (this.realtimeSub) {
+      return; // already wired (loadEvent also runs again after a reconnect)
+    }
     this.realtime.connect();
+    this.connectionSubs = [
+      // The pill reflects the real socket state, and a reconnect re-fetches what was missed.
+      this.realtime.connected$.subscribe((connected) => (this.live = connected)),
+      this.realtime.reconnected$.subscribe(() => this.loadEvent())
+    ];
     this.realtimeSub = this.realtime.onEvent(this.eventId, {
       Authorization: `Bearer ${this.authService.getToken()}`
     }).subscribe((msg) => {
-      this.live = true;
       this.handleRealtime(msg);
     });
   }
@@ -154,10 +164,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
       return;
     }
     if (msg.type === 'PHOTO_REMOVED') {
-      this.photos = this.photos.filter((p) => p.id !== msg.data?.id);
-      if (this.event && msg.data?.id) {
-        this.event.photoCount = Math.max(0, (this.event.photoCount || 0) - 1);
-      }
+      this.removePhoto(msg.data?.id);
       this.pushActivity('A photo was removed');
       return;
     }
@@ -166,11 +173,25 @@ export class EventDetailComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Drops a photo and lowers the counter once, even when both the HTTP response and the
+   *  realtime PHOTO_REMOVED message report the same deletion. */
+  private removePhoto(photoId: number | undefined): void {
+    if (photoId == null || !this.photos.some((p) => p.id === photoId)) {
+      return;
+    }
+    this.photos = this.photos.filter((p) => p.id !== photoId);
+    if (this.event) {
+      this.event.photoCount = Math.max(0, (this.event.photoCount || 0) - 1);
+    }
+  }
+
   private upsertPhoto(photo: any): void {
     const existing = this.photos.find((p) => p.id === photo.id);
     if (existing) {
-      Object.assign(existing, photo);
-      this.photos = [...this.photos];
+      // Replace the object (the mediaUrl pipe is pure, so mutating it would keep the stale
+      // image) and keep known values when the slim realtime payload carries nulls.
+      const fresh = Object.fromEntries(Object.entries(photo).filter(([, v]) => v != null));
+      this.photos = this.photos.map((p) => (p.id === photo.id ? { ...p, ...fresh } : p));
     } else {
       this.photos = [photo, ...this.photos];
       if (this.event) {
@@ -201,10 +222,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
 
     this.eventService.deletePhoto(photoId, token).subscribe({
       next: () => {
-        this.photos = this.photos.filter((p) => p.id !== photoId);
-        if (this.event) {
-          this.event.photoCount = Math.max(0, (this.event.photoCount || 0) - 1);
-        }
+        this.removePhoto(photoId);
         this.pendingDeletePhotoId = 0;
         this.successMessage = 'Photo deleted.';
         this.autoDismiss();

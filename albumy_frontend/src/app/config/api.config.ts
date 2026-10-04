@@ -22,6 +22,15 @@ export function resolveApiUrl(): string {
   return `${window.location.origin}/api`;
 }
 
+/**
+ * Absolute URL of an app route (e.g. `e/ABC123`) that respects the `<base href>`, so share
+ * links and QR codes stay correct when the app is served from a sub-path such as
+ * GitHub Pages (`https://user.github.io/Albumy/`).
+ */
+export function appUrl(path: string): string {
+  return new URL(path.replace(/^\/+/, ''), document.baseURI).href;
+}
+
 /** Prefixes a backend-relative path (e.g. `/files/uuid.png`) with the API base.
  *  Non-http(s) absolute URLs (javascript:, data:, ...) are rejected outright. */
 export function fileUrl(path: string): string {

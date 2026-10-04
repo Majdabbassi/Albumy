@@ -196,7 +196,7 @@
       <div class="media-card" *ngFor="let photo of photos; let i = index">
         <div class="media-thumb" (click)="openLightbox(i)">
           <video *ngIf="photo | isVideo" [src]="photo | mediaUrl:'thumb'" muted playsinline preload="metadata"></video>
-          <img *ngIf="!(photo | isVideo)" [src]="photo | mediaUrl:'thumb'" [alt]="photo.fileName" loading="lazy">
+          <img *ngIf="!(photo | isVideo)" [src]="photo | mediaUrl:'thumb'" [alt]="photo.originalName || photo.fileName" loading="lazy">
           <span *ngIf="photo | isVideo" class="play-badge"><span>
             <app-icon name="video" [size]="18"></app-icon>
           </span></span>
@@ -208,11 +208,11 @@
           </div>
           <div class="media-actions">
             <a [href]="photo | mediaUrl:'full'" target="_blank" rel="noopener" class="icon-btn" title="Open full size"
-              [attr.aria-label]="'Open ' + photo.fileName">
+              [attr.aria-label]="'Open ' + (photo.originalName || photo.fileName)">
               <app-icon name="link" [size]="15"></app-icon>
             </a>
             <button (click)="deletePhoto(photo.id)" class="icon-btn danger" title="Delete photo"
-              [attr.aria-label]="'Delete ' + photo.fileName">
+              [attr.aria-label]="'Delete ' + (photo.originalName || photo.fileName)">
               <app-icon name="trash" [size]="15"></app-icon>
             </button>
           </div>

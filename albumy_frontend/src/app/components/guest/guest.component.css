@@ -195,6 +195,7 @@
    --------------------------------------------------------------------- */
 .welcome-card {
   display: flex;
+  flex-wrap: wrap; /* on phones the "Change name" button drops below instead of squeezing the text */
   align-items: center;
   gap: 14px;
   background: var(--c-surface);
@@ -211,7 +212,7 @@
 }
 
 .welcome-copy {
-  flex: 1;
+  flex: 1 1 160px;
   min-width: 0;
 }
 

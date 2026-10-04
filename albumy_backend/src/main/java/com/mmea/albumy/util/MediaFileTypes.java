@@ -136,7 +136,7 @@ public final class MediaFileTypes {
             return false;
         }
         for (int i = 0; i < expected.length; i++) {
-            if ((head[i] & 0xFF) != expected[i]) {
+            if ((head[i] & 0xFF) != (expected[i] & 0xFF)) {
                 return false;
             }
         }

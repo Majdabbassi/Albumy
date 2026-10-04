@@ -180,15 +180,9 @@ public class MediaPipelineServiceImpl implements MediaPipelineService {
     }
 
     private JsonNode probe(Path file) throws IOException {
-        Process process = new ProcessBuilder(
+        String out = runCapturing(List.of(
                 ffprobePath, "-v", "quiet", "-print_format", "json",
-                "-show_format", "-show_streams", file.toString()
-        ).redirectErrorStream(true).start();
-        String out;
-        try (var in = process.getInputStream()) {
-            out = new String(in.readAllBytes());
-        }
-        await(process, 120);
+                "-show_format", "-show_streams", file.toString()), 120);
         return objectMapper.readTree(out);
     }
 
@@ -213,6 +207,8 @@ public class MediaPipelineServiceImpl implements MediaPipelineService {
     private void transcodeToWeb(Path in, Path out, boolean hasAudio) throws IOException {
         List<String> cmd = new ArrayList<>(List.of(
                 ffmpegPath, "-y", "-i", in.toString(),
+                // libx264 + yuv420p reject odd widths/heights, so round both down to even.
+                "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                 "-profile:v", "main", "-pix_fmt", "yuv420p",
                 "-movflags", "+faststart"
@@ -227,24 +223,51 @@ public class MediaPipelineServiceImpl implements MediaPipelineService {
     }
 
     private void extractPoster(Path in, Path out) throws IOException {
-        List<String> cmd = List.of(
-                ffmpegPath, "-y", "-ss", "1",
-                "-i", in.toString(),
-                "-frames:v", "1", "-vf", "scale='min(960,iw)':-2",
-                out.toString()
-        );
-        run(cmd, 120);
+        // Seek 1s in to skip a black first frame; clips shorter than that yield no frame,
+        // so fall back to the very first one.
+        for (String seek : new String[]{"1", "0"}) {
+            run(List.of(
+                    ffmpegPath, "-y", "-ss", seek,
+                    "-i", in.toString(),
+                    "-frames:v", "1", "-vf", "scale='min(960,iw)':-2",
+                    out.toString()), 120);
+            if (Files.exists(out) && Files.size(out) > 0) {
+                return;
+            }
+        }
+        throw new IOException("ffmpeg produced no poster frame");
     }
 
     private void run(List<String> cmd, long timeoutSeconds) throws IOException {
-        ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
-        Process process = pb.start();
-        String out;
-        try (var in = process.getInputStream()) {
-            out = new String(in.readAllBytes());
-        }
-        if (!await(process, timeoutSeconds) || process.exitValue() != 0) {
-            throw new IOException("Command failed: " + String.join(" ", cmd) + "\n" + out);
+        runCapturing(cmd, timeoutSeconds);
+    }
+
+    /**
+     * Runs a command and returns its combined output. Output goes to a temp file rather
+     * than being read from the pipe first: reading the pipe to the end blocks until the
+     * process exits, which would make the timeout meaningless for a hung ffmpeg.
+     */
+    private String runCapturing(List<String> cmd, long timeoutSeconds) throws IOException {
+        Path log = Files.createTempFile("media-cmd-", ".log");
+        try {
+            Process process = new ProcessBuilder(cmd)
+                    .redirectErrorStream(true)
+                    .redirectOutput(log.toFile())
+                    .start();
+            boolean finished = await(process, timeoutSeconds);
+            if (!finished) {
+                process.destroyForcibly();
+            }
+            String out = Files.readString(log, java.nio.charset.StandardCharsets.UTF_8);
+            if (!finished) {
+                throw new IOException("Command timed out after " + timeoutSeconds + "s: " + String.join(" ", cmd));
+            }
+            if (process.exitValue() != 0) {
+                throw new IOException("Command failed: " + String.join(" ", cmd) + "\n" + out);
+            }
+            return out;
+        } finally {
+            Files.deleteIfExists(log);
         }
     }
 
@@ -348,13 +371,7 @@ public class MediaPipelineServiceImpl implements MediaPipelineService {
                     "-frames:v", "1", "-an",
                     tmp.toString()
             );
-            Process process = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            try (var in = process.getInputStream()) {
-                in.readAllBytes();
-            }
-            if (!await(process, 120) || process.exitValue() != 0) {
-                throw new IOException("ffmpeg could not decode image");
-            }
+            run(cmd, 120);
             return ImageIO.read(tmp.toFile());
         } finally {
             Files.deleteIfExists(tmp);

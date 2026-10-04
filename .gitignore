@@ -28,3 +28,5 @@ target/
 uploads/
 backend-run.log
 backend-run-err.log
+# Local build output
+$log
