@@ -66,7 +66,7 @@ public class SecurityConfig {
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
                 "Authorization", "Content-Type", "Accept", "Origin",
-                "X-Requested-With", "X-Realtime-Token"));
+                "X-Requested-With", "X-Realtime-Token", "X-Guest-Token"));
         configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(Arrays.asList("Content-Disposition"));
         
