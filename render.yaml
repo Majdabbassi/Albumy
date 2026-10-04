@@ -13,6 +13,11 @@ services:
     dockerContext: ./albumy_backend
     healthCheckPath: /actuator/health
     autoDeploy: true
+    # Only rebuild (and so restart, wiping the disposable disk) for backend changes.
+    buildFilter:
+      paths:
+        - albumy_backend/**
+        - render.yaml
     envVars:
       # --- runtime shape -------------------------------------------------
       - key: SPRING_PROFILES_ACTIVE

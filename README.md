@@ -57,7 +57,7 @@ Albumy gives every event a dedicated, no-account guest page:
 | **Organizer** | Per-event gallery with uploader tags, paginated (cursor `beforeId`/`limit`), delete photos/events, **edit event details**, **set a cover photo**, download the whole album as a ZIP; dashboard shows cover thumbnails + live toast |
 | **UI/UX** | Warm amber/slate design system, fully responsive (mobile-first), QR codes, lightbox galleries, upload progress tray, batch-download progress bar, relative timestamps (…ago), empty/loading/error states, SVG icon set |
 | **Deployment** | Docker Compose stack: MySQL + Redis + Spring Boot (web) + Spring Boot (worker) + Nginx/Angular + phpMyAdmin, persistent volumes |
-| **Mobile** | Native Android wrapper via Capacitor 8 (APK buildable without any signing setup) |
+| **Mobile** | Android wrapper via Capacitor 8 (debug build; not part of CI) |
 
 ---
 
@@ -362,7 +362,7 @@ cd albumy_backend
 DB_URL=jdbc:mysql://localhost:3306/albumy_it?createDatabaseIfNotExist=true DB_USER=root DB_PASSWORD=... ./mvnw test   # also runs the MySQL/Redis integration tests
 ```
 
-Unit tests cover file-signature checks, the login rate limiter, the Redis-to-STOMP bridge payload and timestamp serialization. The integration tests (context start-up and event deletion) run when `DB_URL` is set. GitHub Actions runs the backend tests against MySQL and Redis service containers, builds the Angular app for production, and validates `docker-compose.yml` on every push.
+Unit tests cover file-signature checks, the login rate limiter, CORS headers, the Redis-to-STOMP bridge payload and timestamp serialization. The integration tests (context start-up, event deletion and the storage reconcile) run when `DB_URL` is set. Each regression test was checked to fail without the fix it guards. GitHub Actions runs the backend tests against MySQL and Redis service containers, builds the Angular app for production, and validates `docker-compose.yml` on every push.
 
 ## Troubleshooting
 
