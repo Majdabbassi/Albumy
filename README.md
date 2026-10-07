@@ -1,12 +1,10 @@
 # Albumy — Event Photo-Sharing App
 
-Full-stack photo sharing for events. Organizers create an event, share a single QR code or link, and every guest can instantly drop their photos and videos into a shared album — **no sign-up required**. Uploads are chunked and resumable, transcode in the background on a dedicated worker, and appear in everyone's gallery **live** over WebSockets. The complete gallery is also available as a read-only public link where visitors can save photos straight to their phone's gallery at full quality; organizers and admins can grab the whole album as a ZIP.
+Weddings, parties and conferences produce hundreds of photos spread over dozens of phones and group chats. Albumy gives every event one shared album: the organizer shares a single QR code or link, and every guest drops their photos and videos into it — **no sign-up required**. Uploads are chunked and resumable, media is processed in the background by a worker, and new photos appear in everyone's gallery **live** over WebSockets. A read-only public album lets visitors save photos at full quality; organizers download everything as a ZIP.
 
-Built with **Spring Boot + Angular + Redis**, containerized with **Docker Compose**, and shipped as a native Android app via **Capacitor**.
+**Spring Boot 4.1 · Java 21 · MySQL · Redis · STOMP/WebSocket · Angular 20 · Capacitor (Android) · Docker**
 
 [![CI](https://github.com/Majdabbassi/Albumy/actions/workflows/ci.yml/badge.svg)](https://github.com/Majdabbassi/Albumy/actions/workflows/ci.yml)
-
-## Screenshots
 
 | Organizer dashboard | Event page: QR, links, live gallery |
 |---|---|
@@ -20,136 +18,86 @@ Built with **Spring Boot + Angular + Redis**, containerized with **Docker Compos
 
 **<https://majdabbassi.github.io/Albumy/>** (frontend on GitHub Pages, API on Render's free plan)
 
-- The API sleeps after ~15 minutes idle, so the **first request can take about a minute** while it wakes up.
 - Sign in as `demo_organizer` / `demo_organizer_password`, or open the guest page directly: [`/e/DEMO01`](https://majdabbassi.github.io/Albumy/e/DEMO01).
+- The API sleeps after ~15 minutes idle; the first request can take from 20 seconds to a few minutes while it wakes up.
 - It is a shared public demo on a disposable disk: uploads disappear when the server sleeps and the seeded *Demo Wedding* is rebuilt on every start. Please don't upload anything personal.
-
-> Screenshots use the seeded demo data (generated placeholder images). Try it yourself in two minutes: see [Run with Docker](#run-with-docker-recommended).
-
----
-
-## The problem
-
-Weddings, parties, and conferences produce hundreds of photos spread across dozens of phones and group chats. Guests default to the organizer's phone for "all the photos", and the gallery ends up scattered, low-res, or lost. There is no quick, frictionless way for a crowd to pool their media into one shared, high-quality album.
-
-## The solution
-
-Albumy gives every event a dedicated, no-account guest page:
-
-- Guests scan a QR code (or open a link / a `albumy://` deep link) and pick a pseudo — nothing else.
-- They drop in photos and videos (even large files); uploads are **split into 5 MB chunks, retry on flaky networks, survive a page refresh, and pause/resume when offline**.
-- Photos are processed in the background — responsive image variants plus H.264 video + poster frame — and the gallery updates **live** for everyone watching.
-- The organizer opens a curated dashboard with the full gallery — every upload tagged with who sent it — plus QR/share/download tooling, and can delete or download everything as a ZIP.
-
----
-
-## Key features
-
-| Area | Features |
-|---|---|
-| **Guest onboarding** | No account — unique pseudo per event (server-verified), remembered in `localStorage`; guest token issued at claim, sent as `X-Guest-Token` |
-| **Robust uploads** | 5 MB chunked uploads (up to 2 GB per file), resume-from-server (only missing chunks are resent), 3× retry with backoff, IndexedDB-persisted queue that survives reloads, offline pause + auto-resume, 3 uploads in flight |
-| **Camera & size control** | Dedicated camera capture button; large photos are auto-compressed to ≤2560 px JPEG before upload when it reduces the size (GIFs and already-small images pass through untouched) |
-| **Media pipeline** | Dedicated Redis-backed worker transcodes in the background: `_thumb`/`_med`/`_full` JPEG tiers (320/960/1920), H.264 `_web.mp4` + `_poster.jpg` for video, EXIF capture-date/orientation; up to 3 attempts then marked `ERROR` |
-| **Live updates** | Uploads and transcriptions push `PHOTO_ADDED` / `PHOTO_READY` / `PHOTO_REMOVED` / `ACTIVITY` messages: Redis pub/sub → STOMP WebSocket → **instant updates** in guest list, full album, organizer gallery (live pill + activity feed) and dashboard (toast + cover refresh) |
-| **Outreach** | Per-event guest URL + QR code (downloadable PNG / printable) with Web-Share + clipboard copy, and a separate read-only **full album** link w/ deep links (`albumy://open?code=...`); visitors save any photo — single, **Download all**, or selected — at original quality, no ZIP |
-| **Roles & access** | `ADMIN`, `ORGANIZER`, anonymous guest, read-only visitor; single-use 7-day invite links for organizer registration |
-| **Organizer** | Per-event gallery with uploader tags, paginated (cursor `beforeId`/`limit`), delete photos/events, **edit event details**, **set a cover photo**, download the whole album as a ZIP; dashboard shows cover thumbnails + live toast |
-| **UI/UX** | Warm amber/slate design system, fully responsive (mobile-first), QR codes, lightbox galleries, upload progress tray, batch-download progress bar, relative timestamps (…ago), empty/loading/error states, SVG icon set |
-| **Deployment** | Docker Compose stack: MySQL + Redis + Spring Boot (web) + Spring Boot (worker) + Nginx/Angular + phpMyAdmin, persistent volumes |
-| **Mobile** | Android wrapper via Capacitor 8 (debug build; not part of CI) |
-
----
-
-## Tech stack
-
-| Layer | Choice |
-|---|---|
-| Backend | Spring Boot 4.1, Spring Security (JWT), Spring Data JPA (Hibernate), Spring WebSocket (STOMP) + Spring Data Redis |
-| Frontend | Angular 20 (standalone components), @stomp/stompjs, idb-keyval, angularx-qrcode 20 |
-| Database | MySQL 8.4 (`mysql:8.4`) |
-| Cache/messaging | Redis 7 (`redis:7-alpine`, append-only persistence) |
-| Media worker | Same Spring Boot jar, `worker` profile (web server off), ImageIO tiers + ffmpeg |
-| Web server | Nginx 1.27 (SPA, gzip, `/api` reverse proxy, `/ws` upgrade, 210 MB body cap) |
-| Mobile | Capacitor 8 (@capacitor/core, cli, android, app) |
-| Auth | JWT (24 h), BCrypt password hashing, single-use 7-day invites |
-| Storage | Local disk (`uploads/`) via a Docker volume |
 
 ---
 
 ## Architecture
 
-```
-                  ┌──────────────────────────────────────────────────────────┐
-                  │                      docker compose                       │
-                  │                     ┌───────────────┐      ┌──────────────┐ │
-        :6379     │                     │     Redis     │◀────▶│    worker    │ │
-        ┌───┐     │  ┌───────────────┐  │  job queue·pub │ jobs │  media jobs  │ │
-        └───┘     │  │               │  └───────▲───────┘      └──────▲───────┘ │
-  :8081  ┌────────▼──▼─────┐   /api/  │         │ events                │        │
- Browser │    frontend     │─────────│────────▶│────────│─────────│    │        │
-   QR    │  Nginx+Angular   │  /ws    │  backend│         │            │        │ :3306
-  (guest)└─────────────────┘◀────◀───│───STOMP──┘         │            │  ┌─────▼─────┐
-        ┌───────────────┐            └────────────────────┴────────────┘  │   MySQL   │
-        │  Android app   │ ◀-- http://10.0.2.2:8080 (or LAN IP)          │   8.4     │
-        └───────────────┘                       │                         └───────────┘
-                                 /app/uploads (shared volume)
+```mermaid
+flowchart LR
+    G[Guest phone<br/>Angular / Android app] -->|chunked upload<br/>X-Guest-Token| W
+    O[Organizer browser] -->|REST + JWT| W
+    W[Web API<br/>Spring Boot] -->|upload sessions,<br/>job queues| R[(Redis)]
+    W -->|JPA| D[(MySQL)]
+    W --- F[/uploads volume/]
+    R -->|media:jobs<br/>media:jobs:video| K[Media worker<br/>same jar, worker profile]
+    K --- F
+    K -->|PHOTO_READY<br/>after commit| R
+    R -->|albumy:events<br/>pub/sub| W
+    W -->|STOMP /ws| G
+    W -->|STOMP /ws| O
 ```
 
-How the pieces talk:
+Locally, `docker compose up` runs MySQL, Redis, the web API, the media worker, the Angular app behind nginx and phpMyAdmin. On the free host, one instance runs the web API **and** the worker (`embedded-worker` profile) because free tiers have no background workers — same code, different profile.
 
-- **Browser → frontend**: always same-origin. `/api/...` is proxied to the backend (dev server `proxy.conf.json`; Nginx in production), `/ws` is upgraded for STOMP. Direct backend URL is `http://localhost:8080` (no `/api` prefix).
-- **Chunked upload**: `POST /uploads` creates an upload session in Redis (24 h TTL); chunks are `PUT` as raw bytes; `GET /uploads/{id}/chunks` returns what's already stored for a clean resume; `POST /uploads/{id}/complete` assembles the file, deduplicates by SHA-256, and drops a job on the Redis `media:jobs` (image) or `media:jobs:video` (video) queue.
-- **Worker**: the same jar with `SPRING_PROFILES_ACTIVE=worker` (web server off, `DataInitializer`/`WebSocketConfig`/`RealtimeBridgeConfig` excluded). It polls both queues (images get priority over videos) and runs the media pipeline (ImageIO + metadata-extractor + ffmpeg), writing derivatives into the **same `/app/uploads` volume** so the web backend can serve them immediately.
-- **Realtime**: any new/ready/removed photo publishes JSON on the Redis channel `albumy:events`; the web backend bridges it to STOMP topics `/topic/events/{eventId}/photos` and `/topic/events/{eventId}/activity`; clients subscribe per event and update UI in place.
-- **Android app**: built with `--configuration capacitor`, base URL `http://10.0.2.2:8080` (emulator → host; the backend serves its routes directly, there is no `/api` prefix). On a physical device point `environment.capacitor.ts` at your LAN IP. Deep links (`albumy://open?code=...`) navigate straight to the event.
-- Hibernate `ddl-auto=update` creates the schema on first boot (no Flyway); `DataInitializer` seeds demo data when missing and re-seeds photos for the demo event if its gallery is empty.
+**Upload path.** `POST /uploads` opens an upload session in Redis (24 h TTL) and returns the chunk size (5 MB). The client `PUT`s raw chunks; `GET /uploads/{id}/chunks` tells it which chunks the server already has, so a retry or a page reload re-sends only what is missing. `POST /uploads/{id}/complete` assembles the file on disk (up to 2 GB, streamed, never in memory), checks that its bytes match an allowed image/video signature, de-duplicates by SHA-256, saves the photo as `PROCESSING` and pushes a job on a Redis list. On the client, an IndexedDB-persisted queue keeps 3 uploads in flight, retries 3 times with backoff, pauses offline and survives reloads; large photos are compressed to at most 2560 px first when that makes them smaller.
 
----
+**Media worker.** The same jar started with the `worker` profile (web server off). It pops image jobs before video jobs, writes `_thumb`/`_med`/`_full` JPEG tiers (320/960/1920 px), an H.264 `_web.mp4` and a poster for videos (ffmpeg), reads EXIF capture date and orientation, and marks the photo `READY`. A failing job is retried up to 3 times, then marked `ERROR`; photos stuck in `PROCESSING` for 30 minutes (worker down) are re-queued.
 
-## Repository structure
+**Realtime.** The worker is not the process holding the WebSocket sessions, so it publishes `PHOTO_READY` on the Redis channel `albumy:events`, **after its database transaction commits**. The web API bridges that channel to STOMP topics `/topic/events/{id}/photos` and `/activity`. Every subscription is checked: an organizer or admin needs their JWT, a guest or album visitor needs an HMAC-signed *realtime ticket* bound to that event (returned with the guest page or album data, valid 24 h). When a socket reconnects, the page re-fetches the gallery so nothing missed while offline is lost.
 
-```
-albumy/
-├── docker-compose.yml            # full stack: mysql, redis, backend, worker, frontend, phpmyadmin
-├── .env.example                  # template for .env (JWT_SECRET required, rest optional)
-├── .github/workflows/ci.yml      # backend tests (MySQL + Redis), frontend build, compose check
-├── docs/screenshots/             # images used in this README
-├── albumy_backend/               # Spring Boot application (web + worker in one jar)
-│   ├── Dockerfile                # Maven build → JRE 21 runtime (ffmpeg/curl, non-root user)
-│   └── src/main/
-│       ├── java/com/mmea/albumy/
-│       │   ├── config/           # DataInitializer (seed), WebSocketConfig, RealtimeBridgeConfig
-│       │   ├── controller/       # REST controllers (auth, events, guests, uploads, files...)
-│       │   ├── dto/              # request/response DTOs
-│       │   ├── exception/        # ApiException + global JSON error handler
-│       │   ├── model/            # JPA entities (User, Invite, Event, Guest, Photo)
-│       │   ├── repository/       # Spring Data repositories (incl. cursor + dedupe queries)
-│       │   ├── security/         # JWT filter/util, UserDetailsService, SecurityConfig
-│       │   └── service[impl]/    # services + media queue/processor/pipeline/real-time
-│       └── resources/application*.properties
-└── albumy_frontend/              # Angular 20 application
-    ├── Dockerfile                # node build → nginx serve
-    ├── nginx.conf                # SPA fallback + /api reverse proxy + /ws upgrade
-    ├── proxy.conf.json           # dev-server /api + /ws → localhost:8080
-    ├── capacitor.config.json     # Capacitor app/webDir config
-    ├── android/                  # generated Android project (Capacitor)
-    └── src/
-        ├── environments/         # dev/prod/capacitor API base URLs
-        ├── styles.css            # global design system + responsive breakpoints
-        └── app/
-            ├── components/       # login, register, dashboard, event-detail, guest, full-album
-            ├── services/         # auth, event, upload-queue, realtime, deep-link
-            ├── shared/icon/      # reusable SVG icon component
-            ├── config/api.config.ts
-            └── utils/image.ts    # client-side auto-compression before upload
-```
+**Who can do what** is decided per request from the JWT (admin, organizer) or the `X-Guest-Token` header (a guest, scoped to one pseudo in one event); the read-only album is reached through a separate unguessable token.
 
----
+## Key decisions and trade-offs
+
+1. **A queue and a separate worker instead of processing in the upload request.**
+   *Why:* transcoding a 1 GB video or generating three JPEG tiers takes seconds to minutes; doing it in the request would tie up web threads and lose the work if the process restarts. *Cost:* a second process and Redis to operate, and photos are briefly shown as processing. *Alternative:* `@Async` inside the web process is simpler but competes with requests for CPU and loses queued work on a crash. The free deployment runs the worker embedded, which proves the code does not depend on two machines.
+2. **Redis pub/sub in front of STOMP, published after commit.**
+   *Why:* it is the simplest way for the worker to reach browsers connected to another process, and publishing only after commit means a client that re-fetches on the message reads the new row (the original code raced and showed `PROCESSING`). *Cost:* pub/sub keeps no history, so a disconnected client misses messages; pages therefore re-fetch on reconnect.
+3. **Resumable chunked uploads.**
+   *Why:* phones on venue Wi-Fi drop connections constantly; with 5 MB chunks a failure costs one chunk, not the whole video. *Cost:* server-side session state (Redis) and temporary files, cleaned by the session TTL.
+4. **Guests without accounts.**
+   *Why:* asking a wedding guest to sign up loses most of the photos. A guest picks a pseudo (unique per event) and gets a random token. *Cost:* a weaker identity, so organizers keep moderation (delete any photo) and the public endpoints are rate-limited per IP; a guest can only list and delete their own uploads.
+5. **JWT in `localStorage`.**
+   *Why:* the Capacitor Android app needs the bearer token for native HTTP calls, and HttpOnly cookies cannot be set cross-origin for it. *Cost:* a script injected into the page could read it, so the realistic injection vector is closed instead: only safe image/video types are accepted, `/files` is served with `nosniff` and `Content-Security-Policy: sandbox`, and Angular never renders raw HTML.
+6. **Local disk storage.**
+   *Why:* zero cost and simplest to run with Docker. *Cost:* it does not survive a free host's ephemeral disk; the demo uses `StorageReconciler` to drop photo rows whose files are gone and re-seed the demo event on start. Real data would need object storage.
+
+## Security model
+
+| Who | How they are identified | Can |
+|---|---|---|
+| Admin | JWT | create organizer invites, see and manage every event |
+| Organizer | JWT (account created from a single-use invite) | create and edit their events, moderate photos, download the ZIP |
+| Guest | `X-Guest-Token` for one pseudo in one event | upload, list and delete their own photos |
+| Visitor | full-album token in the URL | view and save the event's photos (read-only) |
+
+- Registration requires a valid invite; the invite is burned with an atomic conditional update **after** the account is saved, so two concurrent registrations cannot use one invite and a failed save never consumes it.
+- Event codes come from `SecureRandom`; invite and full-album tokens are UUIDs.
+- Public endpoints are rate-limited with a sliding window (`app.rate-limit.*`): login per IP **and** per username, registration, event-code probing, pseudo checks, claims and upload init/complete.
+- The API refuses to start with a missing, short or published `JWT_SECRET`.
+- Redis, MySQL and phpMyAdmin are published on `127.0.0.1` only, and Redis requires a password; only the app ports (`8080`, `8081`) are reachable from the LAN for phone testing. The backend container runs as a non-root user.
+
+**What the audit found and fixed** (by running the stack in a real browser; 17 bugs): login always answered 500 (the rate-limit filter consumed the request body); every PNG and JPEG was rejected (sign-extended bytes in the signature check); the worker crashed (missing JWT secret) and never marked photos `READY` (detached entity); images broke behind nginx; live updates were dead in the Docker build and then sent unreadable payloads; events were published before the commit; timestamps were off by the server's timezone; event deletion failed; and more. After deployment, `X-Guest-Token` was missing from the CORS headers and a wrong password answered 500 instead of 401. Each fix has a regression test where one was possible.
+
+## Features
+
+| Area | Features |
+|---|---|
+| **Guests** | QR code, link or `albumy://` deep link; unique pseudo per event (server-checked), remembered on the device |
+| **Uploads** | 5 MB chunks, up to 2 GB per file, resume from the server's list of received chunks, 3 retries with backoff, IndexedDB queue that survives reloads, offline pause and auto-resume, 3 in flight, camera capture, client-side compression |
+| **Media** | JPEG tiers (320/960/1920), H.264 video + poster, EXIF date and orientation |
+| **Live** | `PHOTO_ADDED` / `PHOTO_READY` / `PHOTO_REMOVED` / `ACTIVITY` pushed to the guest page, full album, organizer gallery and dashboard |
+| **Sharing** | downloadable/printable QR, Web Share and copy, read-only album where visitors save one, several or all photos at original quality |
+| **Organizer** | gallery tagged by uploader with cursor pagination, edit event details, cover photo, delete photos or the event, streamed ZIP |
+| **Mobile** | Android wrapper via Capacitor 8 (debug build, not part of CI) |
 
 ## Run with Docker (recommended)
 
-Prerequisite: **Docker Desktop** (or Docker Engine + Compose). That's all — Java, Node and Maven are not needed for this path.
+Prerequisite: **Docker Desktop** (or Docker Engine + Compose). Java, Node and Maven are not needed.
 
 ```bash
 git clone https://github.com/Majdabbassi/Albumy.git && cd Albumy
@@ -159,38 +107,40 @@ openssl rand -hex 32
 docker compose up -d --build
 ```
 
-First build compiles the backend (Maven in Docker, includes the worker) and the frontend (npm in Docker), then starts:
-
 | Service | URL | Notes |
 |---|---|---|
 | Frontend | http://localhost:8081 | the app |
-| Backend API | http://localhost:8080 | `/api/...` proxied by Nginx |
-| phpMyAdmin | http://localhost:8082 | MySQL UI (loopback-only; user `albumy`, password from `.env`) |
-| Redis | localhost:6379 | internal (loopback-only + password-protected) |
-| MySQL | localhost:3306 | internal (loopback-only) |
+| Backend API | http://localhost:8080 | `/api/...` proxied by nginx |
+| phpMyAdmin | http://localhost:8082 | MySQL UI (loopback only; user `albumy`, password from `.env`) |
+| Redis | localhost:6379 | loopback only, password-protected |
+| MySQL | localhost:3306 | loopback only |
 
-Demo data is created on first boot: an admin, an organizer, one `Demo Wedding` event with 7 photos, and a pending invite link.
+Demo data is created on first boot: an admin, an organizer, the `Demo Wedding` event (code **`DEMO01`**, guest page `/e/DEMO01`) with 7 placeholder photos from the pseudos `Amelie`, `Karim` and `Sam`, and one unused invite link.
 
-Stop the stack: `docker compose down` (keeps data).  
-Wipe everything including data volumes: `docker compose down -v`.
+| Role | Username | Password |
+|---|---|---|
+| Admin | `demo_admin` | `demo_admin_password` |
+| Organizer | `demo_organizer` | `demo_organizer_password` |
+
+Stop the stack with `docker compose down` (keeps data); wipe everything with `docker compose down -v`.
+
+**Try the whole flow:** log in as `demo_admin` and generate an invite → open the invite link and register an organizer → create an event → open its guest link on your phone (same Wi-Fi, `http://<your-ip>:8081/e/CODE`), pick a pseudo and upload → watch the photo appear live on the organizer's page → download the ZIP.
 
 ## Local development (without Docker)
 
 ```bash
-# 1) MySQL 8 at localhost:3306 with a `albumy` database/user
-#    (or point DB_URL/DB_USER/DB_PASSWORD at your instance).
+# 1) MySQL 8 at localhost:3306 with an `albumy` database/user, and Redis at localhost:6379
+#    (or point DB_URL/DB_USER/DB_PASSWORD and REDIS_* at your instances).
 
-# 2) Backend on :8080 (plus Redis at localhost:6379)
+# 2) Backend on :8080
 cd albumy_backend
 set JWT_SECRET=<paste-your-generated-secret>   # Windows  (export JWT_SECRET=... on Linux/macOS)
 mvnw.cmd spring-boot:run        # Windows        (./mvnw spring-boot:run on Linux/macOS)
 
-# 3) Media worker (optional; without it photos stay PROCESSING)
-#    Run a second instance with the worker profile, or docker compose up -d worker
-set JWT_SECRET=<same-secret-as-above>
+# 3) Media worker (without it photos stay PROCESSING): a second instance with the worker profile
 SPRING_PROFILES_ACTIVE=worker mvnw.cmd spring-boot:run
 
-# 4) Frontend on :4200 (proxies /api and /ws to :8080 automatically)
+# 4) Frontend on :4200 (proxies /api and /ws to :8080)
 cd ../albumy_frontend
 npm install
 npm start
@@ -198,161 +148,19 @@ npm start
 
 ## Configuration (`.env`)
 
-Copy `.env.example` to `.env`. Every variable has a sensible default. Docker expands these for the containers; the backend reads them at runtime via Spring.
-
 | Variable | Used by | Default |
 |---|---|---|
+| `JWT_SECRET` | backend JWT signing key | **required** — `openssl rand -hex 32`; the app refuses to boot with the placeholder (this repo is public) |
 | `MYSQL_ROOT_PASSWORD` | compose (MySQL) | `albumy_root` |
 | `MYSQL_DATABASE` | compose (MySQL) | `albumy` |
-| `MYSQL_USER` / `MYSQL_PASSWORD` | MySQL + backend datasource + phpMyAdmin | `albumy` / `albumy` |
-| `REDIS_PASSWORD` | Redis broker (requirepass) | `albumy_redis` (loopback-only port) |
-| `MYSQL_HOST_PORT` / `REDIS_HOST_PORT` | host ports published for MySQL / Redis | `3306` / `6379` (change them if another project already uses these) |
-| `JWT_SECRET` | backend JWT signing key | **required** — generate with `openssl rand -hex 32`; the app refuses to boot with the placeholder (this repo is public) |
-| `FRONTEND_URL` | backend (invite registration links) | `http://localhost:8081` |
+| `MYSQL_USER` / `MYSQL_PASSWORD` | MySQL + backend + phpMyAdmin | `albumy` / `albumy` |
+| `REDIS_PASSWORD` | Redis (`requirepass`) | `albumy_redis` |
+| `MYSQL_HOST_PORT` / `REDIS_HOST_PORT` | host ports for MySQL / Redis | `3306` / `6379` (change them if another project uses these) |
+| `FRONTEND_URL` | invite registration links | `http://localhost:8081` |
 | `CORS_ALLOWED_ORIGINS` | backend CORS (comma-separated) | web origins + `https://localhost`, `capacitor://localhost` |
-| `UPLOAD_DIR` | backend file storage | `uploads` (inside container: `/app/uploads` volume) |
+| `UPLOAD_DIR` | file storage | `uploads` (`/app/uploads` volume in the container) |
 
-Backend-only settings live in `albumy_backend/src/main/resources/application.properties`: JWT expiration (`86400000` ms), invite validity (`7` days), chunk size (`5 MB`), max assembled file (`2 GB`), upload-session TTL (`24 h`), Redis keys (`media:jobs`/`media:jobs:video`, `albumy:events`), worker threads (`media.jobs.threads=2`), image tiers (`320,960,1920`). Every value has a working default **except `JWT_SECRET`**, which is enforced at startup.
-
-## Demo accounts (fictional)
-
-| Role | Username | Password |
-|---|---|---|
-| Admin | `demo_admin` | `demo_admin_password` |
-| Organizer | `demo_organizer` | `demo_organizer_password` |
-
-Seeded demo data (only when absent): the `Demo Wedding` event (code **`DEMO01`**, guest page at `/e/DEMO01`) with 7 placeholder photos under the pseudos `Amelie`, `Karim`, `Sam`, plus one unused invite link.
-
-## Usage flow
-
-1. **Admin creates an invite** — log in as `demo_admin`, dashboard → "Generate Invite Link".
-2. **Organizer registers** — open the invite URL (`http://localhost:8081/register?invite=TOKEN`). Registration without a valid invite is rejected; the invite is single-use and expires after 7 days.
-3. **Organizer creates an event** — name, date, start time. A 6-char guest code and a full-album token are generated. Details and the cover photo can be edited later from the event page.
-4. **Guests join** — open `/e/CODE`, pick a unique pseudo (server-checked per event), get remembered automatically, and open the drop zone. No account needed.
-5. **Guest uploads** — drop files or take a photo with the camera; large photos are compressed automatically when it helps. Uploads queue, chunk up, survive reloads/offline, and appear in the gallery — the organizer's page and the public album update live.
-6. **Outreach & sharing** — the organizer event page shows the guest link + QR (download PNG / print) and the public full-album link; everything can be shared via the Web Share API or copied. Visitors to the full album save any photo with one tap, or pick Select / **Download all** — each file downloads individually at its original quality (nothing is zipped on the public album).
-7. **Organizer manages the album** — event detail lists every photo with its uploader; deletes individual photos or the whole event; downloads the entire album as a ZIP. Admins can download any event's ZIP.
-
-## Android app (Capacitor)
-
-```bash
-cd albumy_frontend
-
-# Build the web app for the emulator and copy it into the native project
-npm run cap:sync            # ng build --configuration capacitor && cap sync android
-
-# Open in Android Studio and run / build
-npm run cap:open            # syncs, opens Android Studio
-```
-
-Or build an APK from the command line:
-
-```bash
-npm run cap:sync
-cd android
-./gradlew assembleDebug     # app-debug.apk under android/app/build/outputs/apk/debug/
-```
-
-Details:
-
-- The `capacitor` Angular configuration swaps in the `environment.capacitor.ts` base URL: `http://10.0.2.2:8080` — `10.0.2.2` is the Android emulator's alias for the host machine.
-- The backend allows the Capacitor origins (`https://localhost`, `capacitor://localhost`) via `CORS_ALLOWED_ORIGINS`, and the manifest enables cleartext traffic for this dev setup.
-- Deep links: the manifest registers the `albumy://open` scheme; opening `albumy://open?code=EVENTCODE` (optionally `&token=FULLTOKEN`) navigates straight to the guest page or full album.
-- On a **physical device**, edit `src/environments/environment.capacitor.ts` to your machine's LAN IP (e.g. `http://192.168.1.20:8080`), re-run `npm run cap:sync`, and ensure the device and computer share the network.
-
-## API overview
-
-All responses are JSON with `{ "message": ... }` on error. Authenticated endpoints accept `Authorization: Bearer <JWT>`. Guests use the `X-Guest-Token` header obtained from `/claim`. Prefix everything with `http://localhost:8080` (or `/api` through the frontend).
-
-| Method | Path | Access | Purpose |
-|---|---|---|---|
-| POST | `/auth/register` | public | Register organizer (valid `inviteToken` required) |
-| POST | `/auth/login` | public | Login → JWT |
-| GET | `/invites/{token}` | public | Validate invite (valid/used/expired) |
-| POST | `/admin/invites` | ADMIN | Create single-use invite |
-| GET | `/admin/invites` | ADMIN | List invites with status |
-| POST | `/events` | ORGANIZER | Create event |
-| GET | `/events` | authenticated | List events (ADMIN: all) |
-| GET | `/events/{id}?beforeId=&limit=` | owner/ADMIN | Event detail, paginated photos, live-tail support |
-| PUT | `/events/{id}` | owner/ADMIN | Update event (name, date, start time) |
-| POST | `/events/{id}/cover` | owner/ADMIN | Set/replace the event cover photo |
-| DELETE | `/events/{id}` | owner/ADMIN | Delete event + files |
-| DELETE | `/events/photos/{photoId}` | owner/ADMIN | Delete one photo (publishes PHOTO_REMOVED) |
-| GET | `/events/{id}/photos/zip` | owner/ADMIN | Stream all photos as a ZIP |
-| GET | `/events/code/{eventCode}` | public | Guest event info |
-| GET | `/events/code/{eventCode}/name-available?name=X` | public | Check pseudo availability |
-| POST | `/events/code/{eventCode}/claim` | public | Claim pseudo → `guestToken` |
-| GET | `/events/code/{eventCode}/photos?beforeId=&limit=` | public | One pseudo's uploads (X-Guest-Token or uploaderName) |
-| POST | `/uploads` | public | **Init chunked upload** → `{ uploadId, chunkSize }` |
-| PUT | `/uploads/{uploadId}/chunks/{index}` | public | Upload one raw chunk (octet-stream) |
-| GET | `/uploads/{uploadId}/chunks` | public | Received chunk indexes (resume) |
-| POST | `/uploads/{uploadId}/complete` | public | Assemble, dedupe, enqueue media job → `PhotoResponse` |
-| GET | `/events/full/{fullAlbumToken}?beforeId=&limit=` | public | Full album (read-only, separate token) |
-| GET | `/files/{fileName}` | public | Stream an uploaded file/variant |
-| WS  | `/ws` | public | STOMP endpoint → `/topic/events/{id}/photos\|activity` |
-
-`PhotoResponse` payload (REST list): `id`, `uploaderName`, `fileName`, `fileUrl`, `thumbUrl`, `medUrl`, `fullUrl`, `posterUrl`, `webUrl`, `video`, `duration`, `width`, `height`, `size`, `status`, `captureDate`, `uploadedAt`. Real-time messages carry a slimmed subset (no `fileName`, `size`, `status`, or `captureDate`).
-
-Event responses include `coverUrl` (`/files/...`, null until a cover is set), which also drives the guest and full-album page heroes.
-
-## Data model
-
-- **users** — username (unique), email, passwordHash (BCrypt), displayName, role (`ADMIN`/`ORGANIZER`), createdAt
-- **invites** — token (UUID, unique), used, createdAt, expiresAt (7 days)
-- **events** — name, date, startTime, eventCode (unique 6-char), fullAlbumToken (unique UUID), coverFileName (nullable), organizerId, createdAt
-- **guests** — eventId + name, **unique per event** (one pseudo = one guest identity, many photos)
-- **photos** — eventId, guestId, fileName (`UUID.ext`, collision-proof), `fileNameThumb`/`fileNameMed`/`fileNameFull`/`fileNameWeb`/`fileNamePoster`, mimeType, size, width, height, duration, sha256, status (`PROCESSING`/`READY`/`ERROR`), errorCount, captureDate, uploadedAt
-
-`eventCode` and `fullAlbumToken` are globally unique; guests are unique per event; codes come from `SecureRandom` (non-sequential, non-guessable).
-
-## Security notes
-
-- Passwords BCrypt-hashed; never stored in clear text
-- Invite & full-album tokens are UUIDs; guest codes use `SecureRandom`
-- Registration without a valid invite is rejected server-side
-- Guests only read their own uploads (guarded by `X-Guest-Token`); delete/ZIP operations check ownership (owner or ADMIN)
-- Minimal public surface: only auth, invite validation, guest/full-album routes, upload/chunk endpoints, `/files`, `/ws` and health are unauthenticated; everything else requires a JWT with the right role
-- Backend runs as a non-root user inside the container
-- `JWT_SECRET` is **required** and enforced at startup: the backend refuses to boot with a missing, short, or publicly-known placeholder key (the repo is public). Set it via `.env` — `openssl rand -hex 32`
-- Redis, MySQL and phpMyAdmin are published **loopback-only** (`127.0.0.1`), and Redis additionally requires a password — nothing DB/broker-side is reachable from the LAN; only the app ports (`:8080`, `:8081`) are open for phone testing
-- Public endpoints are rate-limited (sliding window, `app.rate-limit.*` in `application.properties`): login/register, event-code probing (`/events/code/*`), name-available, claim, and upload init/complete. Login is keyed both per client IP and per username, so a distributed brute force can't hammer one account
-- STOMP `/ws` subscriptions are **authenticated**: subscribing to `/topic/events/{id}/…` requires either the organizer's/admin's JWT, or a short-lived, HMAC-signed **realtime ticket** that is returned only with the event's guest info or full-album response. An anonymous socket can no longer stream a photo feed just by guessing the numeric event id
-- Registration: passwords must be 8–64 chars with at least one letter and one number, and the invite is burned via an atomic conditional update **after** the account saves — concurrent registrations can't double-use an invite, and a failed save never consumes it
-- **JWT is stored in `localStorage`** (deliberate: the Capacitor app needs the bearer token across native HTTP requests, and HttpOnly cookies can't be set cross-origin for it). The realistic theft vector—stored SVG/HTML that runs in the app—is closed: only safe image/video types are accepted (`MediaFileTypes`), `/files` serves with `nosniff` + `Content-Security-Policy: sandbox`, and Angular's interpolation never renders raw HTML
-- DB passwords and demo accounts are dev-only — change them in any non-demo deployment
-
-## Storage & performance
-
-- Files persist in the `albumy_uploads` volume (survives `docker compose down`; wiped only by `down -v`); original + up to 5 derivatives per upload
-- Chunked uploads write to a `tmp/` under the upload dir and are moved into place on `complete`; assembled files can reach 2 GB without loading into memory
-- ZIP downloads are streamed via a temp file with a chunked buffer — hundreds of photos don't exhaust server memory
-- Galleries paginate with cursor keys (`beforeId`), so "Load more" stays cheap as galleries grow
-
-## Deploy it for free
-
-The same setup as the live demo. One free API instance runs the web server **and** the media worker (`SPRING_PROFILES_ACTIVE=embedded-worker`), because free tiers have no background workers.
-
-| Piece | Where | Notes |
-|---|---|---|
-| Frontend (Angular) | GitHub Pages, via [`pages.yml`](.github/workflows/pages.yml) | Built with `--base-href /Albumy/`; set the repo variable `ALBUMY_API_URL` to your API URL |
-| API + media worker | Render free web service, via [`render.yaml`](render.yaml) | Docker build, 512 MB: heap capped, one media thread |
-| MySQL | any free MySQL-compatible database | e.g. TiDB Cloud Serverless or Aiven; use TLS in `DB_URL` |
-| Redis | any free Redis/Valkey **without a tight command cap** | The worker polls Redis (`MEDIA_JOBS_POLL_MS`, 1 s on the demo). Free plans that cap commands per month, such as Upstash's, can run out quickly. |
-
-1. Create the database and Redis instance and keep their connection details.
-2. On Render choose **New → Blueprint** and select this repository. Fill in the variables marked *sync: false* in `render.yaml`: `DB_URL` (for example `jdbc:mysql://HOST:PORT/albumy?sslMode=REQUIRED&serverTimezone=UTC`), `DB_USER`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`. `JWT_SECRET` is generated for you. Set `REDIS_SSL` to `true` only if your Redis provider requires TLS.
-3. In the repository settings enable **Pages → Source: GitHub Actions**, and add the variable `ALBUMY_API_URL` if your Render URL is not `https://albumy-api.onrender.com`.
-4. Push to `main`. Check `https://<your-api>/actuator/health`, then open the Pages URL.
-
-Because the free disk is wiped on every sleep, `DEMO_RECONCILE_STORAGE=true` makes the API drop photo rows whose files are gone and re-seed the demo event on start-up (`StorageReconciler`). Do not use this mode for real data: use object storage instead.
-
-## Technical decisions
-
-- **Why a separate worker instead of processing in the upload request.** Transcoding a 1 GB video or generating three JPEG tiers can take seconds to minutes. The web process only assembles and validates the file, then drops a job on a Redis list; a second instance of the *same jar* (`worker` profile, web server off) consumes it. Image jobs have priority over video, failures retry up to three times, and both processes share one upload volume so results are served immediately.
-- **Why Redis pub/sub in front of STOMP.** The worker is a different process from the one holding the WebSocket sessions, so it cannot push to browsers directly. It publishes `PHOTO_READY` on a Redis channel; the web instance bridges that to STOMP topics. Messages are published *after the database commit*, otherwise a client that re-fetches on the message can still read the old row.
-- **Why resumable chunked uploads.** Phones on event Wi-Fi drop connections constantly. Each file is split into 5 MB chunks tracked in Redis, so a retry or a page reload re-sends only what is missing, and a SHA-256 of the assembled file de-duplicates repeats.
-- **Guests without accounts, still scoped.** A guest picks a pseudo and gets a random token; the rate limiter throttles claim, upload and login endpoints (per IP, and per username for login), WebSocket subscriptions need an HMAC-signed ticket bound to the event, and uploads are content-sniffed so a file's bytes must match its extension.
-- **Timestamps are absolute.** Photo times are serialized as ISO-8601 instants (`...Z`), so "5 min ago" is correct in any timezone.
+Backend-only settings live in `albumy_backend/src/main/resources/application.properties`: JWT lifetime (24 h), invite validity (7 days), chunk size (5 MB), max file (2 GB), upload-session TTL (24 h), Redis keys (`media:jobs`, `media:jobs:video`, `albumy:events`), worker threads (2), job recovery (30 min), image tiers (`320,960,1920`) and the rate limits.
 
 ## Tests & CI
 
@@ -362,21 +170,99 @@ cd albumy_backend
 DB_URL=jdbc:mysql://localhost:3306/albumy_it?createDatabaseIfNotExist=true DB_USER=root DB_PASSWORD=... ./mvnw test   # also runs the MySQL/Redis integration tests
 ```
 
-Unit tests cover file-signature checks, the login rate limiter, CORS headers, the Redis-to-STOMP bridge payload and timestamp serialization. The integration tests (context start-up, event deletion and the storage reconcile) run when `DB_URL` is set. Each regression test was checked to fail without the fix it guards. GitHub Actions runs the backend tests against MySQL and Redis service containers, builds the Angular app for production, and validates `docker-compose.yml` on every push.
+18 tests. 15 run anywhere: file-signature checks (7), the rate limiter (3: the login body stays readable, per-username throttling, oversized bodies refused), CORS headers for the guest token (2), the Redis-to-STOMP bridge payload, timestamp serialization and the 401 on a wrong password. 3 integration tests (context start-up, event deletion, storage reconcile) need MySQL and Redis and run in CI. Each regression test was checked to fail without its fix. GitHub Actions runs the backend tests against MySQL and Redis service containers, builds the Angular app and validates `docker-compose.yml`.
+
+Not covered by automated tests yet: the ownership rules (organizer vs organizer, guest vs guest), and the video pipeline end to end (reviewed in code, not run with a real video).
+
+## Deploy it for free
+
+The same setup as the live demo.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Frontend (Angular) | GitHub Pages, via [`pages.yml`](.github/workflows/pages.yml) | Built with `--base-href /Albumy/`; set the repo variable `ALBUMY_API_URL` to your API URL |
+| API + media worker | Render free web service, via [`render.yaml`](render.yaml) | Docker build, 512 MB: heap capped, one media thread, `embedded-worker` profile |
+| MySQL | any free MySQL-compatible database | e.g. TiDB Cloud Serverless or Aiven; use TLS in `DB_URL` |
+| Redis | any free Redis/Valkey **without a tight command cap** | The worker polls Redis (`MEDIA_JOBS_POLL_MS`, 1 s on the demo); plans that cap commands per month, such as Upstash's, run out quickly |
+
+1. Create the database and Redis instance and keep their connection details.
+2. On Render choose **New → Blueprint** and select this repository. Fill in the variables marked *sync: false* in `render.yaml`: `DB_URL` (for example `jdbc:mysql://HOST:PORT/albumy?sslMode=REQUIRED&serverTimezone=UTC`), `DB_USER`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`. `JWT_SECRET` is generated for you. Set `REDIS_SSL` to `true` only if your Redis provider requires TLS.
+3. In the repository settings enable **Pages → Source: GitHub Actions**, and add the variable `ALBUMY_API_URL` if your Render URL is not `https://albumy-api.onrender.com`.
+4. Push to `main`. Check `https://<your-api>/actuator/health`, then open the Pages URL.
+
+`DEMO_RECONCILE_STORAGE=true` is for the demo only (it deletes photo rows whose files are gone); use object storage for real data.
+
+## API overview
+
+All errors are JSON `{ "message": ... }`. Authenticated endpoints take `Authorization: Bearer <JWT>`; guests send `X-Guest-Token` (from `/claim`). The backend serves its routes at the root (`http://localhost:8080/...`); through the frontend they are under `/api`.
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| POST | `/auth/register` | public | Register an organizer (valid `inviteToken` required) |
+| POST | `/auth/login` | public | Login → JWT |
+| GET | `/invites/{token}` | public | Validate an invite (valid/used/expired) |
+| POST / GET | `/admin/invites` | ADMIN | Create a single-use invite / list invites |
+| POST | `/events` | ORGANIZER | Create an event |
+| GET | `/events` | authenticated | List events (ADMIN: all) |
+| GET | `/events/{id}?beforeId=&limit=` | owner/ADMIN | Event detail, cursor-paginated photos |
+| PUT | `/events/{id}` | owner/ADMIN | Update name, date, start time |
+| POST | `/events/{id}/cover` | owner/ADMIN | Set or replace the cover photo |
+| DELETE | `/events/{id}` | owner/ADMIN | Delete the event and its files |
+| DELETE | `/events/photos/{photoId}` | owner/ADMIN | Delete one photo (publishes `PHOTO_REMOVED`) |
+| GET | `/events/{id}/photos/zip` | owner/ADMIN | Stream all photos as a ZIP |
+| GET | `/events/code/{eventCode}` | public | Guest event info (+ realtime ticket) |
+| GET | `/events/code/{eventCode}/name-available?name=X` | public | Check pseudo availability |
+| POST | `/events/code/{eventCode}/claim` | public | Claim a pseudo → `guestToken` |
+| GET | `/events/code/{eventCode}/photos?beforeId=&limit=` | guest | The guest's own uploads |
+| DELETE | `/events/code/{eventCode}/photos/{photoId}` | guest | Delete one of the guest's own photos |
+| POST | `/uploads` | public | Init a chunked upload → `{ uploadId, chunkSize }` |
+| PUT | `/uploads/{uploadId}/chunks/{index}` | public | Upload one raw chunk (octet-stream) |
+| GET | `/uploads/{uploadId}/chunks` | public | Received chunk indexes (resume) |
+| POST | `/uploads/{uploadId}/complete` | public | Assemble, verify, dedupe, enqueue → `PhotoResponse` |
+| GET | `/events/full/{fullAlbumToken}?beforeId=&limit=` | public | Read-only full album (+ realtime ticket) |
+| GET | `/files/{fileName}` | public | Stream a file or variant (UUID names) |
+| WS | `/ws` | JWT or ticket | STOMP → `/topic/events/{id}/photos` and `/activity` |
+
+## Data model
+
+- **users** — username (unique), email, passwordHash (BCrypt), displayName, role (`ADMIN`/`ORGANIZER`), createdAt
+- **invites** — token (UUID, unique), used, createdAt, expiresAt (7 days)
+- **events** — name, date, startTime, eventCode (unique 6-char), fullAlbumToken (unique UUID), coverFileName, organizerId, createdAt
+- **guests** — eventId + name, **unique per event** (one pseudo = one guest identity, many photos)
+- **photos** — eventId, guestId, fileName (`UUID.ext`), thumb/med/full/web/poster file names, mimeType, size, width, height, duration, sha256, status (`PROCESSING`/`READY`/`ERROR`), errorCount, captureDate, uploadedAt
+
+The schema is created by Hibernate (`ddl-auto=update`, no migrations). Timestamps are serialized as ISO-8601 instants (`...Z`), so "5 min ago" is right in any timezone.
+
+## Android app (Capacitor)
+
+```bash
+cd albumy_frontend
+npm run cap:sync            # ng build --configuration capacitor && cap sync android
+npm run cap:open            # opens Android Studio
+# or: cd android && ./gradlew assembleDebug   (APK under android/app/build/outputs/apk/debug/)
+```
+
+The `capacitor` configuration points at `http://10.0.2.2:8080` (the Android emulator's alias for the host); on a physical device, set your machine's LAN IP in `src/environments/environment.capacitor.ts` and re-sync. The backend allows the Capacitor origins (`https://localhost`, `capacitor://localhost`). The manifest registers `albumy://open?code=EVENTCODE` (optionally `&token=FULLTOKEN`) to open the guest page or full album directly.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `docker compose up` leaves backend restarting | MySQL or Redis wasn't healthy yet; backend waits for both. `docker compose logs backend` for the real error. |
-| Photos stuck `PROCESSING` | The worker isn't running (`docker compose ps` → `albumy-worker`). Restart it: `docker compose up -d worker`. |
-| Old tables / migration left-overs | `docker compose down -v && docker compose up -d --build` (wipes MySQL + uploads, re-seeds demo data). |
-| Frontend can't reach the API | Nginx proxies `/api` → backend at `:8080`; check `docker compose ps` shows `albumy-backend` up. |
-| Upload rejected | >2 GB, or a disallowed file type; the server returns a JSON `message` surfaced in the queue tray. |
-| Android app can't load the API | Emulator: target `10.0.2.2:8080`. Physical device: change `environment.capacitor.ts` to your LAN IP and re-sync. |
-| Live updates not appearing | Check the STOMP connection (browser network tab → `ws://…/ws`). The `/ws` location in `nginx.conf` must match exactly. |
-| `port is already allocated` for MySQL/Redis | Another stack uses 3306/6379. Set `MYSQL_HOST_PORT` / `REDIS_HOST_PORT` in `.env` (e.g. `3307` / `6380`). |
-| Backend build slow in Docker | Maven dependency cache is not persisted; subsequent runs reuse layers until the build context changes. |
+| Backend keeps restarting | MySQL or Redis was not healthy yet; `docker compose logs backend` shows the real error. |
+| Photos stuck `PROCESSING` | The worker is not running (`docker compose ps` → `albumy-worker`): `docker compose up -d worker`. Stuck photos are re-queued after 30 minutes. |
+| Old tables / left-overs | `docker compose down -v && docker compose up -d --build` (wipes MySQL + uploads, re-seeds demo data). |
+| Upload rejected | Over 2 GB, or a file type that is not an allowed image/video; the server's JSON `message` shows in the upload tray. |
+| Live updates not appearing | Check the STOMP connection (browser network tab → `ws://…/ws`); the `/ws` location in `nginx.conf` must match exactly. |
+| `port is already allocated` for MySQL/Redis | Set `MYSQL_HOST_PORT` / `REDIS_HOST_PORT` in `.env` (e.g. `3307` / `6380`). |
+
+## Repository layout
+
+```
+albumy_backend/    Spring Boot application (web + worker in one jar): config, controller, dto, exception, model,
+                   repository, security, service/serviceimpl (media queue, processor, realtime)
+albumy_frontend/   Angular 20 app, nginx.conf, Capacitor config and generated android/ project
+docs/screenshots/  images used in this README
+```
 
 ## License
 
